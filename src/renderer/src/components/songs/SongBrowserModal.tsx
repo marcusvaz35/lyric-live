@@ -283,7 +283,9 @@ export function SongBrowserModal({ open, onClose }: { open: boolean; onClose: ()
     setSelectedSong(normalized)
     setBlockIndex(0)
     setMode('reading')
-    pushBlock(normalized, 0)
+    // o telão continua com o que já estava: o slide só vai pra lá quando eu clicar nele
+    setFxOnScreen(false)
+    stageBlock(normalized, 0, true)
   }
 
   const exitReading = (): void => {
@@ -1123,6 +1125,39 @@ export function SongBrowserModal({ open, onClose }: { open: boolean; onClose: ()
                 + Novo slide
               </button>
             </div>
+            {playlist.entries.length > 0 && (
+              <aside className="flex w-[190px] shrink-0 flex-col border-l border-surface-800">
+                <div className="border-b border-surface-800 px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-neutral-500">
+                  Culto
+                </div>
+                <div className="flex-1 space-y-1 overflow-y-auto p-2">
+                  {playlist.entries.map((entry, i) => {
+                    const info = songTitle(entry.songId)
+                    const playing = entry.uid === playlist.currentUid || info?.id === selectedSong.id
+                    return (
+                      <button
+                        key={entry.uid}
+                        onClick={() => playEntry(entry.uid)}
+                        title={info ? `${info.title} — ${info.artist}` : 'música removida'}
+                        className={`flex w-full items-start gap-1.5 rounded-md px-2 py-1.5 text-left text-xs transition-colors ${
+                          playing
+                            ? 'bg-accent/20 text-neutral-100 ring-1 ring-accent/60'
+                            : 'text-neutral-400 hover:bg-surface-800 hover:text-neutral-200'
+                        }`}
+                      >
+                        <span className={playing ? 'text-accent' : 'text-neutral-600'}>{i + 1}</span>
+                        <span className="min-w-0 flex-1 leading-snug">
+                          {info?.title ?? 'música removida'}
+                        </span>
+                      </button>
+                    )
+                  })}
+                </div>
+                <div className="border-t border-surface-800 px-3 py-2 text-[10px] leading-snug text-neutral-600">
+                  Trocar de música não mexe no telão: ele só muda quando você clicar num slide.
+                </div>
+              </aside>
+            )}
             <aside className="flex w-[380px] shrink-0 flex-col gap-4 overflow-y-auto border-l border-surface-800 p-4">
               <div>
                 <div className="field-label mb-1 flex items-center justify-between">
