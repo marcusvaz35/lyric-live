@@ -1404,6 +1404,35 @@ export function SongBrowserModal({ open, onClose }: { open: boolean; onClose: ()
                         </label>
                       </div>
                       <div className="flex items-center gap-2">
+                        <div className="field-label">Tamanho</div>
+                        <button
+                          onClick={() => setWordStyle(effectWord, { scale: Math.max(0.5, (selectedSong.blockFx?.[blockIndex]?.wordStyles?.[effectWord]?.scale ?? 1) - 0.1) })}
+                          title="Diminuir"
+                          className="rounded-md border border-surface-700 px-2 py-0.5 text-sm text-neutral-300 hover:bg-surface-800"
+                        >
+                          A−
+                        </button>
+                        <input
+                          type="range"
+                          min={50}
+                          max={300}
+                          step={10}
+                          value={Math.round((selectedSong.blockFx?.[blockIndex]?.wordStyles?.[effectWord]?.scale ?? 1) * 100)}
+                          onChange={(e) => setWordStyle(effectWord, { scale: Number(e.target.value) / 100 })}
+                          className="min-w-0 flex-1"
+                        />
+                        <button
+                          onClick={() => setWordStyle(effectWord, { scale: Math.min(3, (selectedSong.blockFx?.[blockIndex]?.wordStyles?.[effectWord]?.scale ?? 1) + 0.1) })}
+                          title="Aumentar"
+                          className="rounded-md border border-surface-700 px-2 py-0.5 text-sm text-neutral-300 hover:bg-surface-800"
+                        >
+                          A+
+                        </button>
+                        <span className="w-8 text-right text-[11px] text-neutral-400">
+                          {Math.round((selectedSong.blockFx?.[blockIndex]?.wordStyles?.[effectWord]?.scale ?? 1) * 100)}%
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2">
                         <div className="field-label">Cor da palavra</div>
                         <input
                           type="color"
