@@ -1011,10 +1011,12 @@ export function SongBrowserModal({ open, onClose }: { open: boolean; onClose: ()
                     endDrag()
                   }}
                   onDragEnd={endDrag}
-                  className={`group relative flex aspect-video items-center justify-center whitespace-pre-line rounded-lg border-2 bg-black p-3 text-center text-sm font-semibold leading-snug text-white transition-colors ${
+                  className={`group relative flex aspect-video items-center justify-center whitespace-pre-line rounded-lg border-2 p-3 text-center text-sm font-semibold leading-snug text-white transition-colors ${
                     editingIndex === null ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'
                   } ${dragIndex === i ? 'opacity-40' : ''} ${
-                    i === blockIndex ? 'border-accent' : 'border-surface-700 hover:border-surface-600'
+                    i === blockIndex 
+                      ? 'border-2 border-accent bg-accent/15 ring-2 ring-accent/50 shadow-lg shadow-accent/20'
+                      : 'bg-black border-surface-700 hover:border-surface-600 hover:bg-surface-900'
                   }`}
                 >
                   {dragIndex !== null && dropAt !== null && dropAt !== dragIndex && dropAt !== dragIndex + 1 && (
