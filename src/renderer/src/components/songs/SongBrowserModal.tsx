@@ -6,7 +6,7 @@ import { splitIntoBlocks } from '../../lib/songBlocks'
 import { SongSearchOnlineModal } from './SongSearchOnlineModal'
 import { LiveToggleButton } from '../common/LiveToggleButton'
 import { PhraseComposerModal } from '../preview/PhraseComposerModal'
-import { LiveTextOverlay } from '../preview/LiveTextOverlay'
+import { LiveTextOverlay, PhraseStage, type ItemEdit } from '../preview/LiveTextOverlay'
 import { EffectPicker } from '../preview/EffectPicker'
 import { FontPicker } from '../common/FontPicker'
 import { Icon } from '../common/Icon'
@@ -60,6 +60,9 @@ export function SongBrowserModal({ open, onClose }: { open: boolean; onClose: ()
   const [manualFx, setManualFx] = useState(loadManualFx)
   /** No modo manual: o telão está mostrando o slide com efeito (foi disparado)? */
   const [fxOnScreen, setFxOnScreen] = useState(false)
+  /** Palavra da frase selecionada na prévia (alças de mover/redimensionar/girar). */
+  const [phraseSel, setPhraseSel] = useState<number | null>(null)
+  const songRef = useRef<Song | null>(null)
 
   /** Playlist do culto: ordem das músicas e qual está tocando (salva em arquivo). */
   const [playlist, setPlaylist] = useState<Playlist>({ entries: [], currentUid: null })
@@ -213,6 +216,30 @@ export function SongBrowserModal({ open, onClose }: { open: boolean; onClose: ()
   const stageBlock = (song: Song, index: number, replay: boolean): void => {
     const payload = buildPayload(song, index, replay)
     if (payload) setPreview(payload)
+  }
+
+  /** Ajuste manual de uma palavra da frase direto na prévia: atualiza na hora (prévia e, se o
+   * efeito já está no telão ou o modo é automático, o telão também) e grava ao soltar o mouse. */
+  const editPhraseItem = (index: number, edit: ItemEdit & { text?: string }): void => {
+    const song = songRef.current
+    const fx = song?.blockFx?.[blockIndex]
+    if (!song || !fx?.phrase) return
+    const phrase = {
+      ...fx.phrase,
+      items: fx.phrase.items.map((it, k) => (k === index ? { ...it, ...edit } : it))
+    }
+    const blockFx = song.blocks.map((_, idx) => (idx === blockIndex ? { ...fx, phrase } : song.blockFx?.[idx] ?? null))
+    const updated: Song = { ...song, blockFx }
+    songRef.current = updated
+    setSelectedSong(updated)
+    const payload = buildPayload(updated, blockIndex, false)
+    if (!payload) return
+    setPreview(payload)
+    if (!manualFx || fxOnScreen) window.api?.live.pushOverlay(payload)
+  }
+
+  const savePhraseEdit = (): void => {
+    if (songRef.current) window.api?.song.save(songRef.current)
   }
 
   const fireFx = (): void => {
@@ -495,6 +522,10 @@ export function SongBrowserModal({ open, onClose }: { open: boolean; onClose: ()
   }, [mode, blockIndex])
 
   useEffect(() => {
+    setPhraseSel(null)
+  }, [blockIndex])
+
+  useEffect(() => {
     if (!open) return
 
     const onKeyDown = (e: KeyboardEvent): void => {
@@ -546,6 +577,8 @@ export function SongBrowserModal({ open, onClose }: { open: boolean; onClose: ()
     return () => window.removeEventListener('keydown', onKeyDown)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, mode, onlineSearchOpen, blockIndex, selectedSong, onClose, editingIndex, editText, editIsNew, composerOpen, manualFx])
+
+  songRef.current = selectedSong
 
   if (!open) return null
 
@@ -1073,7 +1106,25 @@ export function SongBrowserModal({ open, onClose }: { open: boolean; onClose: ()
                   className="relative w-full overflow-hidden rounded-md border border-surface-700 bg-black"
                   style={{ aspectRatio: '16 / 9', containerType: 'inline-size' }}
                 >
-                  {preview ? (
+                  {preview?.phrase ? (
+                    <div className="absolute inset-0">
+                      <PhraseStage
+                        phrase={preview.phrase}
+                        replayKey={preview.key}
+                        highlights={preview.highlights}
+                        selectedIndex={phraseSel}
+                        onSelectItem={setPhraseSel}
+                        onEditItem={editPhraseItem}
+                        onEndEdit={savePhraseEdit}
+                        onEditText={(i, text) => {
+                          if (text.trim()) {
+                            editPhraseItem(i, { text })
+                            savePhraseEdit()
+                          }
+                        }}
+                      />
+                    </div>
+                  ) : preview ? (
                     <LiveTextOverlay embedded overlay={preview} />
                   ) : (
                     <div className="flex h-full items-center justify-center text-xs text-neutral-600">
@@ -1081,6 +1132,13 @@ export function SongBrowserModal({ open, onClose }: { open: boolean; onClose: ()
                     </div>
                   )}
                 </div>
+                {preview?.phrase && (
+                  <div className="mt-1 text-[11px] leading-snug text-neutral-500">
+                    Ajuste direto aqui: arraste a palavra para mover, os cantos para o tamanho, a bolinha de cima para girar
+                    (Shift = de 15 em 15°) e dê duplo clique para editar o texto.
+                    {(manualFx && !fxOnScreen) ? ' O telão só muda quando você disparar.' : ' O telão acompanha ao vivo.'}
+                  </div>
+                )}
                 {manualFx && (
                   <>
                     <button

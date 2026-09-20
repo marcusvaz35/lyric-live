@@ -122,11 +122,14 @@ export function EffectText({
               const wordChars = [...token]
               charIndex += wordChars.length // mantém a contagem global de letras
               const blockOv = wfx.mode === 'block' && wfx.overlay ? wfx.overlay(wp) : IDENTITY_OVERLAY
+              // o brilho pulsante anima `transform`; num elemento só ele apagaria o transform do
+              // efeito da palavra, então o pulso vai num invólucro interno
+              const { animation: pulse, ...baseStyle } = style
               return (
                 <span
                   key={ti}
                   style={{
-                    ...style,
+                    ...baseStyle,
                     display: 'inline-block',
                     opacity: blockOv.opacity,
                     filter: blockOv.blur > 0 ? `blur(${blockOv.blur}px)` : undefined,
@@ -135,6 +138,7 @@ export function EffectText({
                     transform: `translate(${blockOv.x}px, ${blockOv.y}px) scale(${blockOv.scale}) rotate(${blockOv.rotation}deg)`
                   }}
                 >
+                  <span style={{ display: 'inline-block', animation: pulse }}>
                   {wfx.mode === 'chars' && wfx.charOverlay
                     ? wordChars.map((ch, k) => {
                         const { overlay: co, charOverride } = wfx.charOverlay!(wp, k, wordChars.length, ch)
@@ -156,6 +160,7 @@ export function EffectText({
                         )
                       })
                     : token}
+                  </span>
                 </span>
               )
             }
@@ -282,6 +287,7 @@ export function PhraseStage({
   onSelectItem,
   onEditItem,
   onBeginEdit,
+  onEndEdit,
   onEditText
 }: {
   phrase: PhraseLayout
@@ -293,6 +299,8 @@ export function PhraseStage({
   onEditItem?: (index: number, edit: ItemEdit) => void
   /** Chamado antes da primeira alteração de um gesto (pra congelar o layout das outras palavras). */
   onBeginEdit?: () => void
+  /** Chamado ao soltar o mouse no fim de um gesto (pra gravar o resultado). */
+  onEndEdit?: () => void
   /** Duplo clique numa palavra abre a digitação; devolve o novo texto ao confirmar. */
   onEditText?: (index: number, text: string) => void
 }) {
@@ -342,6 +350,7 @@ export function PhraseStage({
     const up = (): void => {
       window.removeEventListener('pointermove', move)
       window.removeEventListener('pointerup', up)
+      onEndEdit?.()
     }
     window.addEventListener('pointermove', move)
     window.addEventListener('pointerup', up)
@@ -450,10 +459,18 @@ export function PhraseStage({
                 letterSpacing: item.letterSpacing,
                 lineHeight: 1,
                 ...motion(blockOv, item.x, item.y, item.rotation),
-                ...(visible ? {} : { opacity: 0 }),
-                animation: highlighted ? `lyric-highlight 1.6s ease-in-out ${Math.round(item.delay * 1000 + 400)}ms infinite` : undefined
+                ...(visible ? {} : { opacity: 0 })
               }}
             >
+              {/* o pulso do destaque anima `transform`; aqui dentro ele não desfaz o posicionamento da palavra */}
+              <span
+                style={{
+                  display: 'inline-block',
+                  animation: highlighted
+                    ? `lyric-highlight 1.6s ease-in-out ${Math.round(item.delay * 1000 + 400)}ms infinite`
+                    : undefined
+                }}
+              >
               {editingText?.index === i ? (
                 <input
                   autoFocus
@@ -490,6 +507,7 @@ export function PhraseStage({
               ) : (
                 <EffectText text={item.text} effectId={fx?.mode === 'chars' ? item.effect : null} phase={phase} />
               )}
+              </span>
               {selected && (
                 <div
                   style={{
