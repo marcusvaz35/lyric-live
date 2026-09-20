@@ -102,6 +102,8 @@ export interface LiveOverlayPayload {
   wordEffects?: Record<number, EffectId>
   /** Frase estilizada: quando presente, é desenhada no lugar do texto simples. */
   phrase?: PhraseLayout | null
+  /** Multiplicador do tamanho da letra (1 = padrão). */
+  fontScale?: number
   /** Muda a cada "replay" — é o que faz a animação de entrada tocar de novo. */
   key?: number
 }

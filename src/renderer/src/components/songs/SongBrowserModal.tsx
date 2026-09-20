@@ -63,6 +63,9 @@ export function SongBrowserModal({ open, onClose }: { open: boolean; onClose: ()
   /** Palavra da frase selecionada na prévia (alças de mover/redimensionar/girar). */
   const [phraseSel, setPhraseSel] = useState<number | null>(null)
   const songRef = useRef<Song | null>(null)
+  const fontSaveRef = useRef<number | undefined>(undefined)
+  /** Escolher um efeito de entrada vale só pra este slide ou pra todos de uma vez. */
+  const [effectScope, setEffectScope] = useState<'one' | 'all'>('one')
 
   /** Playlist do culto: ordem das músicas e qual está tocando (salva em arquivo). */
   const [playlist, setPlaylist] = useState<Playlist>({ entries: [], currentUid: null })
@@ -186,9 +189,21 @@ export function SongBrowserModal({ open, onClose }: { open: boolean; onClose: ()
       wordStyles: fx?.wordStyles,
       wordEffects: fx?.wordEffects,
       phrase: fx?.phrase ?? null,
+      fontScale: song.fontScale,
       key: overlayKeyRef.current
     }
   }
+
+  /** O slide sem nenhum efeito (é o que o telão mostra até eu disparar, no modo manual). */
+  const plainOf = (payload: LiveOverlayPayload): LiveOverlayPayload => ({
+    text: payload.text,
+    reference: '',
+    effect: null,
+    highlights: [],
+    phrase: null,
+    fontScale: payload.fontScale,
+    key: payload.key
+  })
 
   /** Manda o slide pro LIVE. No modo manual, só o texto simples vai pro telão (o efeito completo
    * aparece na prévia) e o efeito entra quando `fire` for true, ou seja, quando eu disparar. */
@@ -198,14 +213,7 @@ export function SongBrowserModal({ open, onClose }: { open: boolean; onClose: ()
     setPreview(payload)
     if (manualFx && !fire) {
       setFxOnScreen(false)
-      window.api?.live.pushOverlay({
-        text: payload.text,
-        reference: '',
-        effect: null,
-        highlights: [],
-        phrase: null,
-        key: payload.key
-      })
+      window.api?.live.pushOverlay(plainOf(payload))
       return
     }
     setFxOnScreen(fire)
@@ -425,13 +433,35 @@ export function SongBrowserModal({ open, onClose }: { open: boolean; onClose: ()
     else pushBlock(updated, blockIndex, replay)
   }
 
-  /** Copia o efeito de entrada do slide atual pra todos os slides da música (não mexe no telão). */
-  const applyEffectToAll = async (): Promise<void> => {
+  /** Tamanho da letra da música toda (50–200%): atualiza prévia e telão na hora e grava. */
+  const setFontScale = (pct: number): void => {
+    const song = songRef.current
+    if (!song) return
+    const value = Math.min(200, Math.max(50, Math.round(pct)))
+    const updated: Song = { ...song, fontScale: value === 100 ? undefined : value / 100 }
+    songRef.current = updated
+    setSelectedSong(updated)
+    const payload = buildPayload(updated, blockIndex, false)
+    if (payload) {
+      setPreview(payload)
+      window.api?.live.pushOverlay(manualFx && !fxOnScreen ? plainOf(payload) : payload)
+    }
+    window.clearTimeout(fontSaveRef.current)
+    fontSaveRef.current = window.setTimeout(() => {
+      const latest = songRef.current ?? updated
+      window.api?.song.save(latest)
+    }, 400)
+  }
+
+  /** Define o efeito de entrada de todos os slides da música (não mexe nos destaques/fontes deles).
+   * Sem `effect`, copia o do slide atual e pergunta antes de trocar os que já têm outro. */
+  const applyEffectToAll = async (chosen?: SlideFx['effect']): Promise<void> => {
     if (!selectedSong) return
-    const effect = selectedSong.blockFx?.[blockIndex]?.effect ?? null
+    const explicit = chosen !== undefined
+    const effect = explicit ? chosen : (selectedSong.blockFx?.[blockIndex]?.effect ?? null)
     const fxList = selectedSong.blocks.map((_, idx) => selectedSong.blockFx?.[idx] ?? null)
     const others = fxList.filter((fx, idx) => idx !== blockIndex && (fx?.effect ?? null) !== effect)
-    if (others.length > 0) {
+    if (!explicit && others.length > 0) {
       const what = effect ? 'este efeito' : 'sem efeito'
       if (!window.confirm(`Aplicar ${what} em todos os ${fxList.length} slides? Os efeitos de entrada dos outros slides serão trocados.`))
         return
@@ -442,7 +472,12 @@ export function SongBrowserModal({ open, onClose }: { open: boolean; onClose: ()
         Object.keys(next.wordStyles ?? {}).length > 0 || Object.keys(next.wordEffects ?? {}).length > 0
       return next.effect === null && next.highlights.length === 0 && !next.phrase && !hasWordStyles ? null : next
     })
-    await persistBlocks(selectedSong, selectedSong.blocks, newFx)
+    const updated = await persistBlocks(selectedSong, selectedSong.blocks, newFx)
+    // escolhendo o efeito direto (modo "todos"), o slide atual já toca pra eu ver
+    if (explicit) {
+      if (manualFx) stageBlock(updated, blockIndex, true)
+      else pushBlock(updated, blockIndex, true)
+    }
   }
 
   const setWordStyle = (wordIdx: number, patch: Partial<WordFontStyle> | null): void => {
@@ -1072,6 +1107,44 @@ export function SongBrowserModal({ open, onClose }: { open: boolean; onClose: ()
             </div>
             <aside className="flex w-[380px] shrink-0 flex-col gap-4 overflow-y-auto border-l border-surface-800 p-4">
               <div>
+                <div className="field-label mb-1 flex items-center justify-between">
+                  <span>Tamanho da letra (música toda)</span>
+                  <span className="text-neutral-400">{Math.round((selectedSong.fontScale ?? 1) * 100)}%</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setFontScale((selectedSong.fontScale ?? 1) * 100 - 5)}
+                    title="Diminuir a letra"
+                    className="rounded-md border border-surface-700 px-2.5 py-1 text-sm text-neutral-200 hover:bg-surface-800"
+                  >
+                    A−
+                  </button>
+                  <input
+                    type="range"
+                    min={50}
+                    max={200}
+                    step={5}
+                    value={Math.round((selectedSong.fontScale ?? 1) * 100)}
+                    onChange={(e) => setFontScale(Number(e.target.value))}
+                    className="min-w-0 flex-1"
+                  />
+                  <button
+                    onClick={() => setFontScale((selectedSong.fontScale ?? 1) * 100 + 5)}
+                    title="Aumentar a letra"
+                    className="rounded-md border border-surface-700 px-2.5 py-1 text-sm text-neutral-200 hover:bg-surface-800"
+                  >
+                    A+
+                  </button>
+                  <button
+                    onClick={() => setFontScale(100)}
+                    title="Voltar ao tamanho padrão"
+                    className="rounded-md border border-surface-700 px-2 py-1 text-xs text-neutral-300 hover:bg-surface-800"
+                  >
+                    100%
+                  </button>
+                </div>
+              </div>
+              <div>
                 <div className="field-label mb-1">Como os efeitos vão pro telão</div>
                 <div className="flex overflow-hidden rounded-md border border-surface-700 text-xs">
                   {(
@@ -1112,6 +1185,7 @@ export function SongBrowserModal({ open, onClose }: { open: boolean; onClose: ()
                         phrase={preview.phrase}
                         replayKey={preview.key}
                         highlights={preview.highlights}
+                        zoom={preview.fontScale}
                         selectedIndex={phraseSel}
                         onSelectItem={setPhraseSel}
                         onEditItem={editPhraseItem}
@@ -1159,10 +1233,34 @@ export function SongBrowserModal({ open, onClose }: { open: boolean; onClose: ()
               {editingIndex === null && blocks[blockIndex] !== undefined && (
                 <>
                 <div>
-                  <div className="field-label mb-1">Efeito de entrada do slide {blockIndex + 1}</div>
+                  <div className="field-label mb-1">
+                    Efeito de entrada {effectScope === 'all' ? 'de todos os slides' : `do slide ${blockIndex + 1}`}
+                  </div>
+                  <div className="mb-2 flex overflow-hidden rounded-md border border-surface-700 text-xs">
+                    {(
+                      [
+                        ['one', 'Só este slide'],
+                        ['all', 'Todos os slides']
+                      ] as const
+                    ).map(([scope, label]) => (
+                      <button
+                        key={scope}
+                        onClick={() => setEffectScope(scope)}
+                        className={`flex-1 px-2 py-1.5 transition-colors ${
+                          effectScope === scope ? 'bg-accent/25 text-neutral-100' : 'text-neutral-400 hover:bg-surface-800'
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
                   <EffectPicker
                     value={selectedSong.blockFx?.[blockIndex]?.effect ?? 'none'}
-                    onChange={(v) => updateSlideFx({ effect: v === 'none' ? null : (v as SlideFx['effect']) }, true)}
+                    onChange={(v) => {
+                      const effect = v === 'none' ? null : (v as SlideFx['effect'])
+                      if (effectScope === 'all') applyEffectToAll(effect)
+                      else updateSlideFx({ effect }, true)
+                    }}
                     leading={[{ value: 'none', label: 'Sem efeito' }]}
                   />
                   {!manualFx && (
@@ -1173,14 +1271,16 @@ export function SongBrowserModal({ open, onClose }: { open: boolean; onClose: ()
                       <Icon name="replay" size={12} className="mr-1.5 inline" />Repetir no LIVE
                     </button>
                   )}
+                  {effectScope === 'one' && (
                   <button
-                    onClick={applyEffectToAll}
+                    onClick={() => applyEffectToAll()}
                     title="Copia o efeito de entrada deste slide para todos os slides da música"
                     className="mt-2 w-full rounded-md border border-surface-700 px-2 py-1 text-xs text-neutral-300 hover:bg-surface-800"
                   >
                     <Icon name="sparkles" size={12} className="mr-1.5 inline" />
                     {selectedSong.blockFx?.[blockIndex]?.effect ? 'Aplicar este efeito em todos os slides' : 'Tirar o efeito de todos os slides'}
                   </button>
+                  )}
                   {selectedSong.blockFx?.[blockIndex]?.phrase && (
                     <button
                       onClick={() => updateSlideFx({ phrase: null }, true)}

@@ -188,6 +188,7 @@ export function LiveTextOverlay({
   embedded?: boolean
 }) {
   const effect = getEffect(overlay.effect ?? undefined)
+  const fontScale = overlay.fontScale && overlay.fontScale > 0 ? overlay.fontScale : 1
   const phase = useEntrancePhase(overlay.effect, overlay.key)
   const blockOverlay = effect?.mode === 'block' && effect.overlay ? effect.overlay(phase) : IDENTITY_OVERLAY
 
@@ -198,7 +199,7 @@ export function LiveTextOverlay({
   const elapsed = useElapsed(overlay.key, wordFxEnd)
 
   const textStyle: CSSProperties = {
-    fontSize: embedded ? '4.4cqw' : 'clamp(28px, 4.4vw, 96px)',
+    fontSize: embedded ? `calc(4.4cqw * ${fontScale})` : `calc(clamp(28px, 4.4vw, 96px) * ${fontScale})`,
     whiteSpace: 'pre-line',
     opacity: blockOverlay.opacity,
     filter: blockOverlay.blur > 0 ? `blur(${blockOverlay.blur}px)` : undefined,
@@ -210,7 +211,7 @@ export function LiveTextOverlay({
   if (overlay.phrase) {
     return (
       <div className={`${embedded ? 'absolute' : 'fixed'} inset-0`}>
-        <PhraseStage phrase={overlay.phrase} replayKey={overlay.key} highlights={overlay.highlights} />
+        <PhraseStage phrase={overlay.phrase} replayKey={overlay.key} highlights={overlay.highlights} zoom={fontScale} />
       </div>
     )
   }
@@ -283,6 +284,7 @@ export function PhraseStage({
   phrase,
   replayKey,
   highlights = [],
+  zoom = 1,
   selectedIndex,
   onSelectItem,
   onEditItem,
@@ -293,6 +295,8 @@ export function PhraseStage({
   phrase: PhraseLayout
   replayKey: unknown
   highlights?: number[]
+  /** Aumenta/diminui a frase inteira (tamanho da letra da música), mantendo as proporções. */
+  zoom?: number
   /** Só na janela de edição: destaca e permite clicar numa palavra. */
   selectedIndex?: number | null
   onSelectItem?: (index: number | null) => void
@@ -308,6 +312,7 @@ export function PhraseStage({
   const t = useElapsed(replayKey, end)
   const rootRef = useRef<HTMLDivElement>(null)
   const [scale, setScale] = useState(1)
+  const uiScale = scale * zoom
   const editable = Boolean(onEditItem)
   const [editingText, setEditingText] = useState<{ index: number; draft: string } | null>(null)
   const lastDown = useRef<{ index: number; time: number }>({ index: -1, time: 0 })
@@ -374,8 +379,8 @@ export function PhraseStage({
     const startY = e.clientY
     startGesture(e, e.currentTarget as HTMLElement, (ev) => {
       onEditItem?.(i, {
-        x: Math.round(item.x + (ev.clientX - startX) / scale),
-        y: Math.round(item.y + (ev.clientY - startY) / scale)
+        x: Math.round(item.x + (ev.clientX - startX) / uiScale),
+        y: Math.round(item.y + (ev.clientY - startY) / uiScale)
       })
     })
   }
@@ -408,17 +413,18 @@ export function PhraseStage({
 
   const handleStyle = (extra: CSSProperties): CSSProperties => ({
     position: 'absolute',
-    width: HANDLE / scale,
-    height: HANDLE / scale,
+    width: HANDLE / uiScale,
+    height: HANDLE / uiScale,
     background: '#fff',
-    border: `${2 / scale}px solid #6c5ce7`,
-    borderRadius: 2 / scale,
+    border: `${2 / uiScale}px solid #6c5ce7`,
+    borderRadius: 2 / uiScale,
     ...extra
   })
 
   return (
     <div ref={rootRef} className="absolute inset-0 bg-black" onPointerDown={editable ? () => onSelectItem?.(null) : undefined}>
       <ScaledStage>
+        <div style={{ position: 'absolute', inset: 0, transform: `scale(${zoom})`, transformOrigin: 'center' }}>
         {phrase.strip && (
           <div
             style={{
@@ -513,16 +519,16 @@ export function PhraseStage({
                   style={{
                     position: 'absolute',
                     inset: -8,
-                    border: `${2 / scale}px solid #6c5ce7`,
+                    border: `${2 / uiScale}px solid #6c5ce7`,
                     pointerEvents: 'none'
                   }}
                 >
                   {(
                     [
-                      { left: -HANDLE / 2 / scale, top: -HANDLE / 2 / scale, cursor: 'nwse-resize' },
-                      { right: -HANDLE / 2 / scale, top: -HANDLE / 2 / scale, cursor: 'nesw-resize' },
-                      { left: -HANDLE / 2 / scale, bottom: -HANDLE / 2 / scale, cursor: 'nesw-resize' },
-                      { right: -HANDLE / 2 / scale, bottom: -HANDLE / 2 / scale, cursor: 'nwse-resize' }
+                      { left: -HANDLE / 2 / uiScale, top: -HANDLE / 2 / uiScale, cursor: 'nwse-resize' },
+                      { right: -HANDLE / 2 / uiScale, top: -HANDLE / 2 / uiScale, cursor: 'nesw-resize' },
+                      { left: -HANDLE / 2 / uiScale, bottom: -HANDLE / 2 / uiScale, cursor: 'nesw-resize' },
+                      { right: -HANDLE / 2 / uiScale, bottom: -HANDLE / 2 / uiScale, cursor: 'nwse-resize' }
                     ] as CSSProperties[]
                   ).map((pos, k) => (
                     <div
@@ -535,9 +541,9 @@ export function PhraseStage({
                     style={{
                       position: 'absolute',
                       left: '50%',
-                      top: -26 / scale,
-                      width: 1 / scale,
-                      height: 26 / scale,
+                      top: -26 / uiScale,
+                      width: 1 / uiScale,
+                      height: 26 / uiScale,
                       background: '#6c5ce7'
                     }}
                   />
@@ -545,7 +551,7 @@ export function PhraseStage({
                     title="Girar (Shift = de 15 em 15°)"
                     onPointerDown={(e) => beginRotate(e, i, e.currentTarget.parentElement!.parentElement as HTMLElement)}
                     style={{
-                      ...handleStyle({ left: '50%', top: -26 / scale - HANDLE / scale, marginLeft: -HANDLE / 2 / scale }),
+                      ...handleStyle({ left: '50%', top: -26 / uiScale - HANDLE / uiScale, marginLeft: -HANDLE / 2 / uiScale }),
                       borderRadius: '50%',
                       cursor: 'grab',
                       pointerEvents: 'auto',
@@ -557,6 +563,7 @@ export function PhraseStage({
             </div>
           )
         })}
+        </div>
       </ScaledStage>
     </div>
   )

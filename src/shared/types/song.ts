@@ -33,6 +33,8 @@ export interface Song {
   blocks: string[]
   /** Efeitos por slide, alinhado com `blocks` (mesmo tamanho); null = sem efeito. */
   blockFx?: (SlideFx | null)[]
+  /** Tamanho da letra de toda a música (1 = padrão). */
+  fontScale?: number
   createdAt: number
 }
 
