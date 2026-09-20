@@ -60,6 +60,8 @@ export function SongBrowserModal({ open, onClose }: { open: boolean; onClose: ()
   const [manualFx, setManualFx] = useState(loadManualFx)
   /** No modo manual: o telão está mostrando o slide com efeito (foi disparado)? */
   const [fxOnScreen, setFxOnScreen] = useState(false)
+  /** Telão apagado (Esc): nada é reenviado até eu clicar num slide de novo. */
+  const [liveBlank, setLiveBlank] = useState(true)
   /** Palavra da frase selecionada na prévia (alças de mover/redimensionar/girar). */
   const [phraseSel, setPhraseSel] = useState<number | null>(null)
   const songRef = useRef<Song | null>(null)
@@ -211,6 +213,7 @@ export function SongBrowserModal({ open, onClose }: { open: boolean; onClose: ()
     const payload = buildPayload(song, index, replay)
     if (!payload) return
     setPreview(payload)
+    setLiveBlank(false)
     if (manualFx && !fire) {
       setFxOnScreen(false)
       window.api?.live.pushOverlay(plainOf(payload))
@@ -243,7 +246,7 @@ export function SongBrowserModal({ open, onClose }: { open: boolean; onClose: ()
     const payload = buildPayload(updated, blockIndex, false)
     if (!payload) return
     setPreview(payload)
-    if (!manualFx || fxOnScreen) window.api?.live.pushOverlay(payload)
+    if (!liveBlank && (!manualFx || fxOnScreen)) window.api?.live.pushOverlay(payload)
   }
 
   /** Aplica o estilo de frase em todos os slides: o atual fica como está, os outros são refeitos com o texto deles. */
@@ -288,10 +291,17 @@ export function SongBrowserModal({ open, onClose }: { open: boolean; onClose: ()
     stageBlock(normalized, 0, true)
   }
 
+  /** Volta pra biblioteca sem mexer no telão (dá pra escolher a próxima música com a letra no ar). */
   const exitReading = (): void => {
     setPreview(null)
     setMode('list')
     setSelectedSong(null)
+  }
+
+  /** Esc: apaga o telão e continua aqui, pronto pra próxima música. */
+  const blankLive = (): void => {
+    setLiveBlank(true)
+    setFxOnScreen(false)
     window.api?.live.pushOverlay(null)
   }
 
@@ -462,7 +472,7 @@ export function SongBrowserModal({ open, onClose }: { open: boolean; onClose: ()
     const payload = buildPayload(updated, blockIndex, false)
     if (payload) {
       setPreview(payload)
-      window.api?.live.pushOverlay(manualFx && !fxOnScreen ? plainOf(payload) : payload)
+      if (!liveBlank) window.api?.live.pushOverlay(manualFx && !fxOnScreen ? plainOf(payload) : payload)
     }
     window.clearTimeout(fontSaveRef.current)
     fontSaveRef.current = window.setTimeout(() => {
@@ -620,7 +630,7 @@ export function SongBrowserModal({ open, onClose }: { open: boolean; onClose: ()
       if (e.key === 'Escape') {
         e.preventDefault()
         if (onlineSearchOpen) setOnlineSearchOpen(false)
-        else if (mode === 'reading') exitReading()
+        else if (mode === 'reading') blankLive()
         else if (mode === 'create') setMode('list')
         else onClose()
       }
@@ -947,8 +957,17 @@ export function SongBrowserModal({ open, onClose }: { open: boolean; onClose: ()
         {mode === 'reading' && selectedSong && (
           <>
             <div className="flex items-center justify-between border-b border-surface-800 px-4 py-2 text-xs text-neutral-500">
-              <span>
-                <span className="font-medium text-accent">{selectedSong.title}</span> — {selectedSong.artist}
+              <span className="flex items-center gap-2">
+                <button
+                  onClick={exitReading}
+                  title="Voltar pra biblioteca (não mexe no telão)"
+                  className="rounded-md border border-surface-700 px-2 py-1 text-neutral-300 hover:bg-surface-800"
+                >
+                  ← Músicas
+                </button>
+                <span>
+                  <span className="font-medium text-accent">{selectedSong.title}</span> — {selectedSong.artist}
+                </span>
               </span>
               <div className="flex items-center gap-3">
                 {nextEntry && (
@@ -1278,7 +1297,7 @@ export function SongBrowserModal({ open, onClose }: { open: boolean; onClose: ()
                       <span className="ml-2 rounded bg-black/25 px-1.5 py-0.5 text-[10px] font-normal">D</span>
                     </button>
                     <div className="mt-1 text-[11px] text-neutral-500">
-                      No telão agora: {fxOnScreen ? 'slide com efeito' : 'texto simples'}
+                      No telão agora: {liveBlank ? 'apagado (Esc)' : fxOnScreen ? 'slide com efeito' : 'texto simples'}
                     </div>
                   </>
                 )}
@@ -1568,7 +1587,7 @@ export function SongBrowserModal({ open, onClose }: { open: boolean; onClose: ()
             <div className="flex items-center justify-center gap-8 border-t border-surface-800 px-3 py-1.5 text-[11px] text-neutral-600">
               <span>← → trocam de slide{manualFx ? ' · D dispara o efeito' : ''}</span>
               <span>Enter ou duplo clique edita · ⌘/Ctrl+Enter salva · +Shift salva e cria outro slide</span>
-              <span>Esc sai do modo leitura</span>
+              <span>Esc apaga o telão</span>
             </div>
           </>
         )}
