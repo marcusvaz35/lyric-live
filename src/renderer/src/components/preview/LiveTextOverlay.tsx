@@ -136,6 +136,7 @@ export function EffectText({
                     filter: blockOv.blur > 0 ? `blur(${blockOv.blur}px)` : undefined,
                     clipPath: blockOv.clipPath,
                     letterSpacing: blockOv.letterSpacing ? `${blockOv.letterSpacing}px` : undefined,
+                    textShadow: blockOv.textShadow,
                     transform: `translate(${blockOv.x}px, ${blockOv.y}px) scale(${blockOv.scale}) rotate(${blockOv.rotation}deg)`
                   }}
                 >
@@ -206,6 +207,7 @@ export function LiveTextOverlay({
     filter: blockOverlay.blur > 0 ? `blur(${blockOverlay.blur}px)` : undefined,
     clipPath: blockOverlay.clipPath,
     letterSpacing: blockOverlay.letterSpacing ? `${blockOverlay.letterSpacing}px` : undefined,
+    textShadow: blockOverlay.textShadow,
     transform: `translate(${blockOverlay.x}px, ${blockOverlay.y}px) scale(${blockOverlay.scale}) rotate(${blockOverlay.rotation}deg)`
   }
 
@@ -337,6 +339,7 @@ export function PhraseStage({
     opacity: o.opacity,
     filter: o.blur > 0 ? `blur(${o.blur}px)` : undefined,
     clipPath: o.clipPath,
+    textShadow: o.textShadow,
     transform: `translate(-50%, -50%) translate(${x + o.x}px, ${y + o.y}px) scale(${o.scale}) rotate(${rotation + o.rotation}deg)`
   })
 

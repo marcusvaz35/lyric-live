@@ -75,6 +75,9 @@ export function computeEffectPhase(
   return Math.min(inPhase, outPhase)
 }
 
+/** Irregularidade da frente de "fumaça" (px de percentual somados à borda que avança). */
+const SMOKE_EDGE = [0, 11, -7, 14, -5, 9, -11, 6, -3, 8, 0]
+
 const SCRAMBLE_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789#%&*+='
 
 function scrambleChar(seed: number): string {
@@ -244,6 +247,120 @@ export const EFFECTS: EffectDef[] = [
         opacity: phase,
         scale: 0.92 + 0.08 * e,
         letterSpacing: (1 - e) * 18
+      }
+    }
+  },
+  {
+    id: 'focus-in',
+    label: 'Entrar em foco',
+    description: 'Começa borrado e um pouco maior e vai ficando nítido, como uma lente focando.',
+    mode: 'block',
+    duration: 0.8,
+    overlay: (phase) => {
+      const e = easeOutCubic(phase)
+      return {
+        ...IDENTITY_OVERLAY,
+        opacity: Math.min(1, phase * 1.8),
+        scale: 1.08 - 0.08 * e,
+        blur: (1 - e) * 16
+      }
+    }
+  },
+  {
+    id: 'smoke-reveal',
+    label: 'Revelar em fumaça',
+    description: 'O texto aparece atrás de uma borda irregular que atravessa a tela, como fumaça abrindo.',
+    mode: 'block',
+    duration: 1,
+    overlay: (phase) => {
+      const e = easeOutCubic(phase)
+      // frente irregular atravessando a tela num ritmo constante (o easing fica só no
+      // desfoque e no deslize); passa de 100% no fim pra não sobrar recorte
+      const front = phase * 130 - 15
+      const points = SMOKE_EDGE.map((noise, i) => {
+        const y = (i / (SMOKE_EDGE.length - 1)) * 100
+        const x = Math.min(100, Math.max(0, front + noise))
+        return `${x.toFixed(1)}% ${y.toFixed(1)}%`
+      })
+      return {
+        ...IDENTITY_OVERLAY,
+        opacity: Math.min(1, phase * 2.2),
+        blur: (1 - e) * 7,
+        x: -(1 - e) * 14,
+        clipPath: `polygon(0% 0%, ${points.join(', ')}, 0% 100%)`
+      }
+    }
+  },
+  {
+    id: 'whip-blur',
+    label: 'Chicote',
+    description: 'Entra rápido de lado deixando rastro de movimento e para de uma vez.',
+    mode: 'block',
+    duration: 0.55,
+    overlay: (phase) => {
+      const e = easeOutCubic(phase)
+      return {
+        ...IDENTITY_OVERLAY,
+        opacity: Math.min(1, phase * 2.4),
+        x: -(1 - e) * 170,
+        scale: 1 + (1 - e) * 0.05,
+        blur: (1 - e) * 11
+      }
+    }
+  },
+  {
+    id: 'ghost-trail',
+    label: 'Rastro',
+    description: 'Cópias fantasma correm atrás do texto e o alcançam ao assentar.',
+    mode: 'block',
+    duration: 0.7,
+    overlay: (phase) => {
+      const e = easeOutCubic(phase)
+      const gap = (1 - e) * 28
+      const fade = 1 - e
+      return {
+        ...IDENTITY_OVERLAY,
+        opacity: Math.min(1, phase * 2),
+        x: -gap * 1.1,
+        textShadow:
+          fade > 0.02
+            ? `${gap.toFixed(1)}px 0 color-mix(in srgb, currentColor ${Math.round(fade * 45)}%, transparent), ${(gap * 2).toFixed(1)}px 0 color-mix(in srgb, currentColor ${Math.round(fade * 20)}%, transparent)`
+            : undefined
+      }
+    }
+  },
+  {
+    id: 'spin-in',
+    label: 'Giro',
+    description: 'Chega girando e encolhendo até parar reto no lugar.',
+    mode: 'block',
+    duration: 0.75,
+    overlay: (phase) => {
+      const e = easeOutBack(phase)
+      const f = easeOutCubic(phase)
+      return {
+        ...IDENTITY_OVERLAY,
+        opacity: Math.min(1, phase * 2),
+        rotation: (1 - e) * -22,
+        scale: 0.72 + 0.28 * e,
+        blur: (1 - f) * 4
+      }
+    }
+  },
+  {
+    id: 'fade-blur-up',
+    label: 'Névoa',
+    description: 'Sobe devagar saindo de uma névoa, bem suave.',
+    mode: 'block',
+    duration: 0.9,
+    overlay: (phase) => {
+      const e = easeOutCubic(phase)
+      return {
+        ...IDENTITY_OVERLAY,
+        opacity: phase,
+        y: (1 - e) * 26,
+        scale: 0.98 + 0.02 * e,
+        blur: (1 - e) * 9
       }
     }
   },

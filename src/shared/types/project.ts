@@ -91,6 +91,12 @@ export type EffectId =
   | 'chars-tumble'
   | 'chars-tumble-scale'
   | 'write'
+  | 'focus-in'
+  | 'smoke-reveal'
+  | 'whip-blur'
+  | 'ghost-trail'
+  | 'spin-in'
+  | 'fade-blur-up'
 
 export interface TextLayer extends BaseLayer {
   type: 'text'
