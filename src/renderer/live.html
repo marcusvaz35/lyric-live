@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="pt-BR">
+<html lang="pt-BR" style="background: #000">
   <head>
     <meta charset="UTF-8" />
     <meta
@@ -7,9 +7,19 @@
       content="default-src 'self'; script-src 'self'; worker-src 'self' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: lyricmedia:; media-src 'self' blob: lyricmedia:;"
     />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="dark" />
     <title>Lyric Live — LIVE</title>
+    <!-- fundo preto desde o primeiro quadro: sem isso o tema claro do editor pinta a janela de branco antes do React montar -->
+    <style>
+      html,
+      body,
+      #root {
+        background: #000 !important;
+        margin: 0;
+      }
+    </style>
   </head>
-  <body>
+  <body style="background: #000">
     <div id="root"></div>
     <script type="module" src="/src/live.tsx"></script>
   </body>
