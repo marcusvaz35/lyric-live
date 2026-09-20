@@ -24,6 +24,16 @@ interface DraftSong {
 
 const EMPTY_DRAFT: DraftSong = { title: '', artist: '', author: '', lyrics: '' }
 
+const FX_MODE_KEY = 'lyriclive.fxMode'
+
+function loadManualFx(): boolean {
+  try {
+    return localStorage.getItem(FX_MODE_KEY) !== 'auto'
+  } catch {
+    return true
+  }
+}
+
 function moveItem<T>(list: T[], from: number, to: number): T[] {
   const next = list.filter((_, idx) => idx !== from)
   next.splice(to, 0, list[from])
@@ -46,6 +56,10 @@ export function SongBrowserModal({ open, onClose }: { open: boolean; onClose: ()
   const [effectWord, setEffectWord] = useState<number | null>(null)
   /** O que está sendo mandado pro LIVE agora — alimenta a janela de prévia. */
   const [preview, setPreview] = useState<LiveOverlayPayload | null>(null)
+  /** Manual: escolher efeito só monta a prévia; no telão vai o texto simples até eu disparar. */
+  const [manualFx, setManualFx] = useState(loadManualFx)
+  /** No modo manual: o telão está mostrando o slide com efeito (foi disparado)? */
+  const [fxOnScreen, setFxOnScreen] = useState(false)
 
   /** Playlist do culto: ordem das músicas e qual está tocando (salva em arquivo). */
   const [playlist, setPlaylist] = useState<Playlist>({ entries: [], currentUid: null })
@@ -146,14 +160,22 @@ export function SongBrowserModal({ open, onClose }: { open: boolean; onClose: ()
     return songs.filter((s) => s.title.toLowerCase().includes(q) || s.artist.toLowerCase().includes(q))
   }, [songs, query])
 
-  /** Manda o slide pro LIVE com o efeito/destaques dele. `replay` refaz a
-   * animação de entrada; sem replay (ex.: marcar uma palavra) só atualiza o destaque. */
-  const pushBlock = (song: Song, index: number, replay = true): void => {
+  const changeFxMode = (manual: boolean): void => {
+    setManualFx(manual)
+    try {
+      localStorage.setItem(FX_MODE_KEY, manual ? 'manual' : 'auto')
+    } catch {
+      // sem armazenamento: vale só nesta sessão
+    }
+  }
+
+  /** Slide + efeito/destaques dele, do jeito que iria pro telão. `replay` refaz a animação de entrada. */
+  const buildPayload = (song: Song, index: number, replay: boolean): LiveOverlayPayload | null => {
     const text = song.blocks[index]
-    if (text === undefined) return
+    if (text === undefined) return null
     const fx = song.blockFx?.[index]
     if (replay) overlayKeyRef.current = Date.now()
-    const payload: LiveOverlayPayload = {
+    return {
       text,
       reference: '',
       effect: fx?.effect ?? null,
@@ -163,8 +185,38 @@ export function SongBrowserModal({ open, onClose }: { open: boolean; onClose: ()
       phrase: fx?.phrase ?? null,
       key: overlayKeyRef.current
     }
+  }
+
+  /** Manda o slide pro LIVE. No modo manual, só o texto simples vai pro telão (o efeito completo
+   * aparece na prévia) e o efeito entra quando `fire` for true, ou seja, quando eu disparar. */
+  const pushBlock = (song: Song, index: number, replay = true, fire = false): void => {
+    const payload = buildPayload(song, index, replay)
+    if (!payload) return
     setPreview(payload)
+    if (manualFx && !fire) {
+      setFxOnScreen(false)
+      window.api?.live.pushOverlay({
+        text: payload.text,
+        reference: '',
+        effect: null,
+        highlights: [],
+        phrase: null,
+        key: payload.key
+      })
+      return
+    }
+    setFxOnScreen(fire)
     window.api?.live.pushOverlay(payload)
+  }
+
+  /** Modo manual: mostra o efeito só na prévia, sem tocar no que está no telão. */
+  const stageBlock = (song: Song, index: number, replay: boolean): void => {
+    const payload = buildPayload(song, index, replay)
+    if (payload) setPreview(payload)
+  }
+
+  const fireFx = (): void => {
+    if (selectedSong) pushBlock(selectedSong, blockIndex, true, true)
   }
 
   const openReading = async (id: string): Promise<void> => {
@@ -342,7 +394,28 @@ export function SongBrowserModal({ open, onClose }: { open: boolean; onClose: ()
     const cleaned = next.effect === null && next.highlights.length === 0 && !next.phrase && !hasWordStyles ? null : next
     const newFx = fxList.map((fx, idx) => (idx === blockIndex ? cleaned : fx))
     const updated = await persistBlocks(selectedSong, selectedSong.blocks, newFx)
-    pushBlock(updated, blockIndex, replay)
+    if (manualFx) stageBlock(updated, blockIndex, replay)
+    else pushBlock(updated, blockIndex, replay)
+  }
+
+  /** Copia o efeito de entrada do slide atual pra todos os slides da música (não mexe no telão). */
+  const applyEffectToAll = async (): Promise<void> => {
+    if (!selectedSong) return
+    const effect = selectedSong.blockFx?.[blockIndex]?.effect ?? null
+    const fxList = selectedSong.blocks.map((_, idx) => selectedSong.blockFx?.[idx] ?? null)
+    const others = fxList.filter((fx, idx) => idx !== blockIndex && (fx?.effect ?? null) !== effect)
+    if (others.length > 0) {
+      const what = effect ? 'este efeito' : 'sem efeito'
+      if (!window.confirm(`Aplicar ${what} em todos os ${fxList.length} slides? Os efeitos de entrada dos outros slides serão trocados.`))
+        return
+    }
+    const newFx = fxList.map((fx) => {
+      const next: SlideFx = { ...(fx ?? { effect: null, highlights: [] }), effect }
+      const hasWordStyles =
+        Object.keys(next.wordStyles ?? {}).length > 0 || Object.keys(next.wordEffects ?? {}).length > 0
+      return next.effect === null && next.highlights.length === 0 && !next.phrase && !hasWordStyles ? null : next
+    })
+    await persistBlocks(selectedSong, selectedSong.blocks, newFx)
   }
 
   const setWordStyle = (wordIdx: number, patch: Partial<WordFontStyle> | null): void => {
@@ -444,6 +517,14 @@ export function SongBrowserModal({ open, onClose }: { open: boolean; onClose: ()
         return
       }
 
+      const tag = (e.target as HTMLElement | null)?.tagName
+      const typing = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT'
+      if (mode === 'reading' && manualFx && !typing && !e.metaKey && !e.ctrlKey && !e.altKey && (e.key === 'd' || e.key === 'D')) {
+        e.preventDefault()
+        fireFx()
+        return
+      }
+
       if (mode === 'reading' && e.key === 'Enter') {
         e.preventDefault()
         startEdit(blockIndex)
@@ -464,7 +545,7 @@ export function SongBrowserModal({ open, onClose }: { open: boolean; onClose: ()
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, mode, onlineSearchOpen, blockIndex, selectedSong, onClose, editingIndex, editText, editIsNew, composerOpen])
+  }, [open, mode, onlineSearchOpen, blockIndex, selectedSong, onClose, editingIndex, editText, editIsNew, composerOpen, manualFx])
 
   if (!open) return null
 
@@ -958,8 +1039,34 @@ export function SongBrowserModal({ open, onClose }: { open: boolean; onClose: ()
             </div>
             <aside className="flex w-[380px] shrink-0 flex-col gap-4 overflow-y-auto border-l border-surface-800 p-4">
               <div>
+                <div className="field-label mb-1">Como os efeitos vão pro telão</div>
+                <div className="flex overflow-hidden rounded-md border border-surface-700 text-xs">
+                  {(
+                    [
+                      [true, 'Eu disparo'],
+                      [false, 'Automático']
+                    ] as const
+                  ).map(([manual, label]) => (
+                    <button
+                      key={label}
+                      onClick={() => changeFxMode(manual)}
+                      className={`flex-1 px-2 py-1.5 transition-colors ${
+                        manualFx === manual ? 'bg-accent/25 text-neutral-100' : 'text-neutral-400 hover:bg-surface-800'
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                <div className="mt-1 text-[11px] leading-snug text-neutral-600">
+                  {manualFx
+                    ? 'Escolher efeito só mostra na prévia. O telão fica com o texto simples até você clicar em “Disparar”.'
+                    : 'O efeito escolhido já vai direto pro telão.'}
+                </div>
+              </div>
+              <div>
                 <div className="field-label mb-1 flex items-center justify-between">
-                  <span>Prévia do que está no LIVE</span>
+                  <span>{manualFx ? 'Prévia (ainda não está no telão)' : 'Prévia do que está no LIVE'}</span>
                   <span className="text-neutral-600">slide {blockIndex + 1}</span>
                 </div>
                 <div
@@ -974,6 +1081,22 @@ export function SongBrowserModal({ open, onClose }: { open: boolean; onClose: ()
                     </div>
                   )}
                 </div>
+                {manualFx && (
+                  <>
+                    <button
+                      onClick={fireFx}
+                      title="Atalho: D"
+                      className="mt-2 w-full rounded-md bg-accent px-2 py-2 text-sm font-semibold text-white hover:bg-accent-hover"
+                    >
+                      <Icon name="replay" size={13} className="mr-1.5 inline" />
+                      {fxOnScreen ? 'Disparar de novo no telão' : 'Disparar efeito no telão'}
+                      <span className="ml-2 rounded bg-black/25 px-1.5 py-0.5 text-[10px] font-normal">D</span>
+                    </button>
+                    <div className="mt-1 text-[11px] text-neutral-500">
+                      No telão agora: {fxOnScreen ? 'slide com efeito' : 'texto simples'}
+                    </div>
+                  </>
+                )}
               </div>
               {editingIndex === null && blocks[blockIndex] !== undefined && (
                 <>
@@ -984,11 +1107,21 @@ export function SongBrowserModal({ open, onClose }: { open: boolean; onClose: ()
                     onChange={(v) => updateSlideFx({ effect: v === 'none' ? null : (v as SlideFx['effect']) }, true)}
                     leading={[{ value: 'none', label: 'Sem efeito' }]}
                   />
+                  {!manualFx && (
+                    <button
+                      onClick={() => pushBlock(selectedSong, blockIndex, true)}
+                      className="mt-2 w-full rounded-md border border-surface-700 px-2 py-1 text-xs text-neutral-300 hover:bg-surface-800"
+                    >
+                      <Icon name="replay" size={12} className="mr-1.5 inline" />Repetir no LIVE
+                    </button>
+                  )}
                   <button
-                    onClick={() => pushBlock(selectedSong, blockIndex, true)}
+                    onClick={applyEffectToAll}
+                    title="Copia o efeito de entrada deste slide para todos os slides da música"
                     className="mt-2 w-full rounded-md border border-surface-700 px-2 py-1 text-xs text-neutral-300 hover:bg-surface-800"
                   >
-                    <Icon name="replay" size={12} className="mr-1.5 inline" />Repetir no LIVE
+                    <Icon name="sparkles" size={12} className="mr-1.5 inline" />
+                    {selectedSong.blockFx?.[blockIndex]?.effect ? 'Aplicar este efeito em todos os slides' : 'Tirar o efeito de todos os slides'}
                   </button>
                   {selectedSong.blockFx?.[blockIndex]?.phrase && (
                     <button
@@ -1193,7 +1326,7 @@ export function SongBrowserModal({ open, onClose }: { open: boolean; onClose: ()
             </aside>
             </div>
             <div className="flex items-center justify-center gap-8 border-t border-surface-800 px-3 py-1.5 text-[11px] text-neutral-600">
-              <span>← → trocam de slide</span>
+              <span>← → trocam de slide{manualFx ? ' · D dispara o efeito' : ''}</span>
               <span>Enter ou duplo clique edita · ⌘/Ctrl+Enter salva · +Shift salva e cria outro slide</span>
               <span>Esc sai do modo leitura</span>
             </div>
