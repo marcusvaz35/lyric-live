@@ -246,6 +246,22 @@ export function SongBrowserModal({ open, onClose }: { open: boolean; onClose: ()
     if (!manualFx || fxOnScreen) window.api?.live.pushOverlay(payload)
   }
 
+  /** Aplica o estilo de frase em todos os slides: o atual fica como está, os outros são refeitos com o texto deles. */
+  const applyPhraseToAll = async (build: (text: string) => PhraseLayout, current: PhraseLayout): Promise<void> => {
+    if (!selectedSong) return
+    const total = selectedSong.blocks.length
+    if (total > 1 && !window.confirm(`Aplicar este estilo de frase em todos os ${total} slides? O estilo de frase dos outros slides será trocado.`))
+      return
+    const newFx = selectedSong.blocks.map((text, idx) => {
+      const base: SlideFx = selectedSong.blockFx?.[idx] ?? { effect: null, highlights: [] }
+      const layout = idx === blockIndex ? current : build(text.replace(/\s*\n\s*/g, ' ').trim())
+      return layout.items.length > 0 ? { ...base, phrase: layout } : (selectedSong.blockFx?.[idx] ?? null)
+    })
+    const updated = await persistBlocks(selectedSong, selectedSong.blocks, newFx)
+    if (manualFx) stageBlock(updated, blockIndex, true)
+    else pushBlock(updated, blockIndex, true)
+  }
+
   const savePhraseEdit = (): void => {
     if (songRef.current) window.api?.song.save(songRef.current)
   }
@@ -1496,6 +1512,7 @@ export function SongBrowserModal({ open, onClose }: { open: boolean; onClose: ()
             initialPhrase={selectedSong.blocks[blockIndex]}
             onClose={() => setComposerOpen(false)}
             onApply={(layout: PhraseLayout) => updateSlideFx({ phrase: layout }, true)}
+            onApplyAll={applyPhraseToAll}
           />
         )}
 

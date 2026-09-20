@@ -23,7 +23,8 @@ export function PhraseComposerModal({
   onClose,
   initialPhrase,
   onCreated,
-  onApply
+  onApply,
+  onApplyAll
 }: {
   onClose: () => void
   /** Texto que já vem preenchido (ex.: o slide de uma música). */
@@ -32,6 +33,9 @@ export function PhraseComposerModal({
   onCreated?: () => void
   /** Modo ao vivo: em vez de criar camadas na timeline, devolve a frase estilizada pra aplicar no slide. */
   onApply?: (layout: PhraseLayout, effect: EffectId | null) => void
+  /** Modo ao vivo: aplica o mesmo estilo em todos os slides. `build` refaz o layout pro texto de cada slide
+   * (estilo, cor, efeito e atraso valem; ajustes manuais de palavras específicas ficam só neste slide). */
+  onApplyAll?: (build: (text: string) => PhraseLayout, current: PhraseLayout) => void
 }) {
   const scene = useProjectStore((s) => s.currentScene())
   const playhead = useProjectStore((s) => s.playhead)
@@ -195,6 +199,27 @@ export function PhraseComposerModal({
     if (selectedWord === null) return
     record(true)
     setOverrides((o) => ({ ...o, [selectedWord]: { ...o[selectedWord], ...patch } }))
+  }
+
+  const handleApplyAll = (): void => {
+    if (!onApplyAll) return
+    const build = (text: string): PhraseLayout =>
+      toPhraseLayout(
+        composePhrase({
+          phrase: text,
+          overrides: {},
+          presetId,
+          accent,
+          effect: effect || undefined,
+          start: 0,
+          duration: 60,
+          stagger,
+          sceneDuration: 120
+        }),
+        0
+      )
+    onApplyAll(build, toPhraseLayout(layers, 0))
+    onClose()
   }
 
   const handleCreate = (): void => {
@@ -420,7 +445,7 @@ export function PhraseComposerModal({
             </div>
             <p className="text-[11px] text-neutral-600">
               {onApply
-                ? 'Não vai pra timeline: o estilo é aplicado só neste slide e aparece no LIVE na hora (e toda vez que você passar por ele).'
+                ? 'Não vai pra timeline. “Só neste slide” aplica aqui, com os ajustes que você fez palavra por palavra. “Em todos os slides” usa o estilo, a cor, o efeito e o atraso em cada slide (os ajustes manuais de palavras ficam só neste).'
                 : `A frase começa onde está a agulha da timeline (agora em ${playhead.toFixed(1)}s). Depois de criar, cada
               palavra é uma camada que você pode mover, trocar de fonte ou de efeito.`}
             </p>
@@ -431,12 +456,22 @@ export function PhraseComposerModal({
           <button onClick={onClose} className="rounded-md px-3 py-1.5 text-sm text-neutral-400 hover:bg-surface-800">
             Cancelar
           </button>
+          {onApply && onApplyAll && (
+            <button
+              onClick={handleApplyAll}
+              disabled={layers.length === 0}
+              title="Usa este estilo, cor, efeito e atraso em todos os slides da música"
+              className="rounded-md border border-accent px-4 py-1.5 text-sm font-medium text-accent hover:bg-accent/10 disabled:opacity-40"
+            >
+              Aplicar em todos os slides
+            </button>
+          )}
           <button
             onClick={handleCreate}
             disabled={layers.length === 0}
             className="rounded-md bg-accent px-4 py-1.5 text-sm font-medium text-white hover:bg-accent-hover disabled:opacity-40"
           >
-            {onApply ? 'Aplicar ao slide' : 'Criar na timeline'}
+            {onApply ? (onApplyAll ? 'Aplicar só neste slide' : 'Aplicar ao slide') : 'Criar na timeline'}
           </button>
         </div>
       </div>
