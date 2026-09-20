@@ -6,7 +6,10 @@ import {
   type ImportedAudioFile,
   type LiveOverlayPayload,
   type LiveStatePayload,
-  type ProjectFileResult
+  type ProjectFileResult,
+  type UpdateCheckResult,
+  type UpdateInfo,
+  type UpdateProgress
 } from '@shared/types/ipc'
 import type { Project } from '@shared/types/project'
 import type { BibleBook, BibleVersionMeta } from '@shared/types/bible'
@@ -72,6 +75,22 @@ const api = {
       const listener = (_event: Electron.IpcRendererEvent, command: AppCommand): void => callback(command)
       ipcRenderer.on(IPC.appCommand, listener)
       return () => ipcRenderer.removeListener(IPC.appCommand, listener)
+    }
+  },
+  update: {
+    check: (): Promise<UpdateCheckResult> => ipcRenderer.invoke(IPC.updateCheck),
+    download: (): Promise<void> => ipcRenderer.invoke(IPC.updateDownload),
+    install: (): Promise<void> => ipcRenderer.invoke(IPC.updateInstall),
+    openPage: (): Promise<void> => ipcRenderer.invoke(IPC.updateOpenPage),
+    onAvailable: (callback: (info: UpdateInfo) => void): (() => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, info: UpdateInfo): void => callback(info)
+      ipcRenderer.on(IPC.updateAvailable, listener)
+      return () => ipcRenderer.removeListener(IPC.updateAvailable, listener)
+    },
+    onProgress: (callback: (p: UpdateProgress) => void): (() => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, p: UpdateProgress): void => callback(p)
+      ipcRenderer.on(IPC.updateProgress, listener)
+      return () => ipcRenderer.removeListener(IPC.updateProgress, listener)
     }
   },
   transcribe: {

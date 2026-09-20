@@ -17,6 +17,7 @@ export function buildAppMenu(getMainWindow: () => BrowserWindow | null): void {
             label: 'Lyric Live',
             submenu: [
               { role: 'about' as const, label: 'Sobre o Lyric Live' },
+              { label: 'Verificar atualizações…', click: send('checkUpdates') },
               { type: 'separator' as const },
               { role: 'hide' as const, label: 'Ocultar Lyric Live' },
               { role: 'hideOthers' as const, label: 'Ocultar outros' },
@@ -51,6 +52,14 @@ export function buildAppMenu(getMainWindow: () => BrowserWindow | null): void {
         { role: 'selectAll', label: 'Selecionar tudo' }
       ]
     },
+    ...(isMac
+      ? []
+      : [
+          {
+            label: 'Ajuda',
+            submenu: [{ label: 'Verificar atualizações…', click: send('checkUpdates') }]
+          }
+        ]),
     {
       label: 'Janela',
       submenu: [

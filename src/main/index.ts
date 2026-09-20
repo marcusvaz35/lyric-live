@@ -12,6 +12,7 @@ import { registerSongHandlers } from './ipc/songHandlers'
 import { registerTranscribeHandlers } from './ipc/transcribeHandlers'
 import { buildAppMenu } from './menu'
 import { registerFontHandlers } from './ipc/fontHandlers'
+import { registerUpdateHandlers, startUpdateChecks } from './updater'
 import { JsonProjectRepository } from './persistence/jsonProjectRepository'
 import { mediaDirectory } from './persistence/mediaLibrary'
 
@@ -182,8 +183,10 @@ app.whenReady().then(() => {
   registerSongHandlers()
   registerTranscribeHandlers()
   registerFontHandlers()
+  registerUpdateHandlers(() => mainWindow)
 
   createMainWindow()
+  startUpdateChecks(() => mainWindow)
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createMainWindow()

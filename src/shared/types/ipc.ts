@@ -36,11 +36,37 @@ export const IPC = {
   appCommand: 'app:command',
   fontsList: 'fonts:list',
   transcribeRun: 'transcribe:run',
-  transcribeProgress: 'transcribe:progress'
+  transcribeProgress: 'transcribe:progress',
+  updateCheck: 'update:check',
+  updateDownload: 'update:download',
+  updateInstall: 'update:install',
+  updateOpenPage: 'update:openPage',
+  updateAvailable: 'update:available',
+  updateProgress: 'update:progress'
 } as const
 
 /** Comandos do menu do app (atalhos Ctrl/⌘+…) que o processo principal manda pro editor. */
-export type AppCommand = 'undo' | 'redo' | 'save' | 'saveAs' | 'open' | 'new'
+export type AppCommand = 'undo' | 'redo' | 'save' | 'saveAs' | 'open' | 'new' | 'checkUpdates'
+
+/** Versão nova publicada no GitHub. `assetUrl` é nulo se não há instalador pro sistema atual. */
+export interface UpdateInfo {
+  version: string
+  notes: string
+  assetName: string | null
+  assetUrl: string | null
+  size: number
+  pageUrl: string
+}
+
+export interface UpdateCheckResult {
+  info: UpdateInfo | null
+  error?: string
+}
+
+export interface UpdateProgress {
+  received: number
+  total: number
+}
 
 export interface ProjectFileResult {
   project: Project

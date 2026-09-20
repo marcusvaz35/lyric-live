@@ -7,6 +7,7 @@ import type { AppCommand } from '@shared/types/ipc'
 import { saveProject, saveProjectAs, openProject } from './lib/projectIO'
 import { getUndoScope } from './lib/undoScope'
 import { loadSystemFonts } from './lib/systemFonts'
+import { UpdateNotice } from './components/common/UpdateNotice'
 
 function confirmDiscard(): boolean {
   return !useProjectStore.getState().dirty || window.confirm('Há alterações não salvas. Continuar mesmo assim?')
@@ -107,5 +108,10 @@ export default function App() {
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [])
 
-  return <MainLayout />
+  return (
+    <>
+      <MainLayout />
+      <UpdateNotice />
+    </>
+  )
 }
