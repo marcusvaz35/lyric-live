@@ -24,6 +24,7 @@ export const IPC = {
   bibleDownloadVersion: 'bible:downloadVersion',
   bibleReadVersion: 'bible:readVersion',
   bibleDeleteVersion: 'bible:deleteVersion',
+  bibleImportVersion: 'bible:importVersion',
   songList: 'song:list',
   songSave: 'song:save',
   songRead: 'song:read',

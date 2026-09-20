@@ -3,6 +3,8 @@ export interface BibleVersionMeta {
   label: string
   license: string
   downloaded: boolean
+  /** Sem download automático (texto com direitos reservados): o usuário importa o próprio arquivo licenciado. */
+  importOnly?: boolean
 }
 
 export interface BibleBook {

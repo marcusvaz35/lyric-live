@@ -59,6 +59,8 @@ const api = {
       ipcRenderer.invoke(IPC.bibleDownloadVersion, versionId),
     readVersion: (versionId: string): Promise<BibleBook[]> =>
       ipcRenderer.invoke(IPC.bibleReadVersion, versionId),
+    importVersion: (versionId: string): Promise<boolean> =>
+      ipcRenderer.invoke(IPC.bibleImportVersion, versionId),
     deleteVersion: (versionId: string): Promise<void> =>
       ipcRenderer.invoke(IPC.bibleDeleteVersion, versionId)
   },

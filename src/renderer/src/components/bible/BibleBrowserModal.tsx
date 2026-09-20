@@ -199,6 +199,20 @@ export function BibleBrowserModal({ open, onClose }: { open: boolean; onClose: (
 
   if (!open) return null
 
+  const handleImport = async (): Promise<void> => {
+    if (!window.api) return
+    setDownloading(true)
+    setDownloadError(null)
+    try {
+      const imported = await window.api.bible.importVersion(versionId)
+      if (imported) setVersions(await window.api.bible.listVersions())
+    } catch (err) {
+      setDownloadError(err instanceof Error ? err.message.replace(/^Error invoking remote method '[^']*': (Error: )?/, '') : String(err))
+    } finally {
+      setDownloading(false)
+    }
+  }
+
   const handleDownload = async (): Promise<void> => {
     if (!window.api) return
     setDownloading(true)
@@ -259,13 +273,23 @@ export function BibleBrowserModal({ open, onClose }: { open: boolean; onClose: (
         ) : !selectedVersion?.downloaded ? (
           <div className="flex flex-1 flex-col items-center justify-center gap-3 p-8 text-center">
             <p className="max-w-sm text-sm text-neutral-400">{selectedVersion?.license}</p>
-            <button
-              onClick={handleDownload}
-              disabled={downloading}
-              className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-white hover:bg-accent-hover disabled:opacity-50"
-            >
-              {downloading ? 'Baixando…' : 'Baixar esta versão'}
-            </button>
+            {selectedVersion?.importOnly ? (
+              <button
+                onClick={handleImport}
+                disabled={downloading}
+                className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-white hover:bg-accent-hover disabled:opacity-50"
+              >
+                {downloading ? 'Importando…' : `Importar arquivo da ${selectedVersion.label.match(/\(([^)]+)\)/)?.[1] ?? 'versão'}…`}
+              </button>
+            ) : (
+              <button
+                onClick={handleDownload}
+                disabled={downloading}
+                className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-white hover:bg-accent-hover disabled:opacity-50"
+              >
+                {downloading ? 'Baixando…' : 'Baixar esta versão'}
+              </button>
+            )}
             {downloadError && <p className="text-xs text-red-400">{downloadError}</p>}
           </div>
         ) : !books ? (
