@@ -14,7 +14,13 @@ export const PHRASE_PRESETS: PhrasePreset[] = [
   { id: 'red-strip', label: 'Tira vermelha', description: 'Letras itálicas inclinadas sobre uma tira rasgada.' },
   { id: 'cinema', label: 'Cinema espaçado', description: 'Letras finas, bem espaçadas e discretas.' },
   { id: 'script', label: 'Manuscrito', description: 'Letras de pincel grandes e inclinadas.' },
-  { id: 'block', label: 'Bloco moderno', description: 'Palavras em negrito empilhadas, tamanhos diferentes.' }
+  { id: 'block', label: 'Bloco moderno', description: 'Palavras em negrito empilhadas, tamanhos diferentes.' },
+  { id: 'script-lead', label: 'Manuscrita + bloco', description: 'Primeira palavra manuscrita e o resto em caixa alta condensada, do lado.' },
+  { id: 'serif-destaque', label: 'Serifa em destaque', description: 'Palavra forte em serifa itálica gigante e o resto pequeno e espaçado.' },
+  { id: 'condensada', label: 'Condensada inclinada', description: 'Tudo em caixa alta condensada e inclinada, bem apertado.' },
+  { id: 'pincel', label: 'Pincel empilhado', description: 'Letras de marcador em caixa alta, linhas empilhadas e tortas.' },
+  { id: 'serif-espacada', label: 'Serifa espaçada', description: 'Caixa alta serifada bem espaçada e a última palavra manuscrita.' },
+  { id: 'bloco-gigante', label: 'Bloco gigante', description: 'Palavra principal enorme e inclinada, o resto pequeno ao redor.' }
 ]
 
 /** Ajustes manuais de uma palavra, por cima do que o estilo escolhido gerou. */
@@ -104,6 +110,28 @@ function styleWords(words: string[], presetId: string, accent: string): WordStyl
         const size = Math.max(70, 150 - i * 22)
         return { fontFamily: 'Montserrat', fontSize: size, fontWeight: 900, italic: false, color: i === 0 ? accent : '#ffffff', letterSpacing: 0, rotation: 0, upper: true }
       }
+      case 'script-lead':
+        // primeira palavra manuscrita puxando a frase, resto em condensada alta
+        return i === 0
+          ? { fontFamily: 'Caveat Brush', fontSize: 132, fontWeight: 400, italic: false, color: '#ffffff', letterSpacing: 0, rotation: -4, upper: false, dy: 10 }
+          : { fontFamily: 'Oswald', fontSize: 92, fontWeight: 700, italic: false, color: '#ffffff', letterSpacing: 1, rotation: 0, upper: true }
+      case 'serif-destaque':
+        return i === longest
+          ? { fontFamily: 'Playfair Display', fontSize: 168, fontWeight: 700, italic: true, color: '#ffffff', letterSpacing: 0, rotation: 0, upper: true }
+          : { fontFamily: 'Oswald', fontSize: 54, fontWeight: 700, italic: false, color: '#ffffff', letterSpacing: 6, rotation: 0, upper: true }
+      case 'condensada':
+        return { fontFamily: 'Anton', fontSize: 118, fontWeight: 400, italic: true, color: '#ffffff', letterSpacing: 1, rotation: -4, upper: true }
+      case 'pincel':
+        return { fontFamily: 'Permanent Marker', fontSize: 104, fontWeight: 400, italic: false, color: '#ffffff', letterSpacing: 0, rotation: i % 2 ? 2 : -3, upper: true }
+      case 'serif-espacada':
+        // caixa alta serifada e espaçada, fechando com a última palavra manuscrita
+        return i === words.length - 1 && words.length > 1
+          ? { fontFamily: 'Caveat Brush', fontSize: 124, fontWeight: 400, italic: false, color: accent, letterSpacing: 0, rotation: -3, upper: false }
+          : { fontFamily: 'Georgia', fontSize: 62, fontWeight: 700, italic: false, color: '#ffffff', letterSpacing: 14, rotation: 0, upper: true }
+      case 'bloco-gigante':
+        return i === longest
+          ? { fontFamily: 'Anton', fontSize: 224, fontWeight: 400, italic: false, color: accent, letterSpacing: 0, rotation: -7, upper: true }
+          : { fontFamily: 'Anton', fontSize: 88, fontWeight: 400, italic: false, color: '#ffffff', letterSpacing: 2, rotation: -7, upper: true }
       default: {
         if (i === longest) {
           return { fontFamily: 'Anton', fontSize: 170, fontWeight: 400, italic: false, color: accent, letterSpacing: 2, rotation: -3, upper: true }
