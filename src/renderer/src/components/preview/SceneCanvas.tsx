@@ -2,6 +2,7 @@ import { useMemo } from 'react'
 import { useProjectStore } from '../../state/projectStore'
 import { resolveTransform } from '../../lib/animate'
 import { LayerRenderer } from './LayerRenderer'
+import { ScaledStage } from './ScaledStage'
 
 export const CANVAS_WIDTH = 1280
 export const CANVAS_HEIGHT = 720
@@ -23,6 +24,7 @@ export function SceneCanvas() {
       style={{ aspectRatio: `${CANVAS_WIDTH} / ${CANVAS_HEIGHT}` }}
       onMouseDown={() => selectLayer(null)}
     >
+      <ScaledStage>
       {sortedLayers.flatMap((layer) => {
         const segment = layer.segments.find((seg) => playhead >= seg.start && playhead <= seg.start + seg.duration)
         if (!segment) return []
@@ -37,6 +39,7 @@ export function SceneCanvas() {
           />
         )
       })}
+      </ScaledStage>
     </div>
   )
 }

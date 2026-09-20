@@ -1,6 +1,8 @@
 import { useProjectStore } from '../../state/projectStore'
 import { TextLayerProperties } from './TextLayerProperties'
 import { BackgroundLayerProperties } from './BackgroundLayerProperties'
+import { ShapeLayerProperties } from './ShapeLayerProperties'
+import { MediaLayerProperties } from './MediaLayerProperties'
 import { TransformSection } from './TransformSection'
 
 export function PropertiesPanel() {
@@ -16,6 +18,10 @@ export function PropertiesPanel() {
         <div className="space-y-5">
           {layer.type === 'text' ? (
             <TextLayerProperties layer={layer} />
+          ) : layer.type === 'shape' ? (
+            <ShapeLayerProperties layer={layer} />
+          ) : layer.type === 'media' ? (
+            <MediaLayerProperties layer={layer} />
           ) : (
             <BackgroundLayerProperties layer={layer} />
           )}

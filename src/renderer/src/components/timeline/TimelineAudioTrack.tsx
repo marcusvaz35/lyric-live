@@ -1,22 +1,32 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { Scene } from '@shared/types/project'
 import { useProjectStore } from '../../state/projectStore'
 import { importSceneAudio, removeSceneAudio } from '../../lib/audioIO'
+import { TranscribeModal } from './TranscribeModal'
+import { Icon } from '../common/Icon'
 
 export const AUDIO_ROW_HEIGHT = 48
 
 export function TimelineAudioGutterRow({ scene }: { scene: Scene }) {
+  const [transcribing, setTranscribing] = useState(false)
   return (
     <div
       className="flex items-center gap-1.5 border-b border-surface-800 px-2 text-xs"
       style={{ height: AUDIO_ROW_HEIGHT }}
     >
-      <span>🎵</span>
+      <Icon name="music" size={14} className="text-neutral-400" />
       {scene.audio ? (
         <>
           <span className="flex-1 truncate text-neutral-300" title={scene.audio.fileName}>
             {scene.audio.fileName}
           </span>
+          <button
+            className="flex h-6 shrink-0 items-center rounded-md border border-surface-600 px-1.5 text-[11px] text-neutral-300 transition-colors hover:border-accent hover:text-neutral-100"
+            title="Transcrever a letra da música e criar as linhas na timeline"
+            onClick={() => setTranscribing(true)}
+          >
+            Transcrever
+          </button>
           <button
             className="icon-btn h-6 w-6"
             title="Trocar música"
@@ -40,6 +50,7 @@ export function TimelineAudioGutterRow({ scene }: { scene: Scene }) {
           + Importar música
         </button>
       )}
+      {transcribing && <TranscribeModal scene={scene} onClose={() => setTranscribing(false)} />}
     </div>
   )
 }

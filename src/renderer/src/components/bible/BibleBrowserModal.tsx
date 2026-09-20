@@ -4,6 +4,7 @@ import { parseQuickLocate } from '../../lib/bibleSearch'
 import { categoryColorForIndex } from './bookCategories'
 import { QuickLocatePopup } from './QuickLocatePopup'
 import { LiveToggleButton } from '../common/LiveToggleButton'
+import { Icon } from '../common/Icon'
 
 export function BibleBrowserModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [versions, setVersions] = useState<BibleVersionMeta[] | null>(null)
@@ -227,7 +228,7 @@ export function BibleBrowserModal({ open, onClose }: { open: boolean; onClose: (
       <div className="relative flex h-full w-full max-w-6xl flex-col overflow-hidden rounded-xl border border-surface-700 bg-surface-900 shadow-2xl">
         <div className="flex items-center justify-between border-b border-surface-800 px-4 py-3">
           <div className="flex items-center gap-2 text-sm font-semibold text-neutral-100">
-            <span>📖</span>
+            <Icon name="book" size={16} className="text-neutral-400" />
             <span>{currentBook ? `${currentBook.name} ${chapter}` : 'Bíblia'}</span>
             {reading && <span className="rounded bg-accent/20 px-1.5 py-0.5 text-[10px] text-accent">AO VIVO</span>}
           </div>

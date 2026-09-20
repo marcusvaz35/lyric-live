@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import {
   IPC,
+  type AppCommand,
   type DisplayInfo,
   type ImportedAudioFile,
   type LiveOverlayPayload,
@@ -9,7 +10,8 @@ import {
 } from '@shared/types/ipc'
 import type { Project } from '@shared/types/project'
 import type { BibleBook, BibleVersionMeta } from '@shared/types/bible'
-import type { Song, SongSearchResult, SongSummary } from '@shared/types/song'
+import type { Playlist, Song, SongSearchResult, SongSummary } from '@shared/types/song'
+import type { TranscribedSegment, TranscribeProgress } from '@shared/types/transcribe'
 
 const api = {
   project: {
@@ -21,6 +23,7 @@ const api = {
   },
   media: {
     importAudio: (): Promise<ImportedAudioFile | null> => ipcRenderer.invoke(IPC.mediaImportAudio),
+    importVisual: (): Promise<ImportedAudioFile | null> => ipcRenderer.invoke(IPC.mediaImportVisual),
     readFile: (filePath: string): Promise<ArrayBuffer> => ipcRenderer.invoke(IPC.mediaReadFile, filePath)
   },
   live: {
@@ -58,6 +61,28 @@ const api = {
       ipcRenderer.invoke(IPC.bibleReadVersion, versionId),
     deleteVersion: (versionId: string): Promise<void> =>
       ipcRenderer.invoke(IPC.bibleDeleteVersion, versionId)
+  },
+  fonts: {
+    list: (): Promise<string[]> => ipcRenderer.invoke(IPC.fontsList)
+  },
+  app: {
+    onCommand: (callback: (command: AppCommand) => void): (() => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, command: AppCommand): void => callback(command)
+      ipcRenderer.on(IPC.appCommand, listener)
+      return () => ipcRenderer.removeListener(IPC.appCommand, listener)
+    }
+  },
+  transcribe: {
+    run: (audio: Float32Array): Promise<TranscribedSegment[]> => ipcRenderer.invoke(IPC.transcribeRun, audio),
+    onProgress: (callback: (p: TranscribeProgress) => void): (() => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, p: TranscribeProgress): void => callback(p)
+      ipcRenderer.on(IPC.transcribeProgress, listener)
+      return () => ipcRenderer.removeListener(IPC.transcribeProgress, listener)
+    }
+  },
+  playlist: {
+    get: (): Promise<Playlist> => ipcRenderer.invoke(IPC.playlistGet),
+    save: (playlist: Playlist): Promise<void> => ipcRenderer.invoke(IPC.playlistSave, playlist)
   },
   song: {
     list: (): Promise<SongSummary[]> => ipcRenderer.invoke(IPC.songList),

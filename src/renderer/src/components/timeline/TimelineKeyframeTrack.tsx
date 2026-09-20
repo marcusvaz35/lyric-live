@@ -18,7 +18,9 @@ const PROP_COLOR: Record<AnimatablePropKey, string> = {
 
 const CLIP_STYLE: Record<Layer['type'], string> = {
   text: 'bg-indigo-500/25 border-indigo-400/60',
-  background: 'bg-amber-500/20 border-amber-400/50'
+  background: 'bg-amber-500/20 border-amber-400/50',
+  shape: 'bg-rose-500/25 border-rose-400/60',
+  media: 'bg-emerald-500/20 border-emerald-400/50'
 }
 
 const HANDLE_WIDTH = 10

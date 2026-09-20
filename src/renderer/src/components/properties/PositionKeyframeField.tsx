@@ -1,6 +1,7 @@
 import type { Layer, Vec2 } from '@shared/types/project'
 import { useProjectStore } from '../../state/projectStore'
 import { resolveTransform } from '../../lib/animate'
+import { Icon } from '../common/Icon'
 
 interface Props {
   layer: Layer
@@ -62,7 +63,7 @@ export function PositionKeyframeField({ layer, playhead }: Props) {
           hasKeyframeHere ? 'ring-1 ring-accent' : ''
         }`}
       >
-        ⏱
+        <Icon name="clock" size={14} />
       </button>
     </div>
   )

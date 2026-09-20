@@ -1,3 +1,5 @@
+@import './themes.css';
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -19,15 +21,16 @@
     height: 12px;
   }
   ::-webkit-scrollbar-track {
-    background: rgba(255, 255, 255, 0.04);
+    background: rgb(var(--n-100) / 0.04);
   }
   ::-webkit-scrollbar-thumb {
-    @apply bg-[#4d4d5c] rounded-full;
+    background-color: rgb(var(--scroll));
+    @apply rounded-full;
     border: 3px solid transparent;
     background-clip: padding-box;
   }
   ::-webkit-scrollbar-thumb:hover {
-    @apply bg-neutral-400;
+    background-color: rgb(var(--n-400));
     border: 3px solid transparent;
     background-clip: padding-box;
   }
@@ -63,10 +66,10 @@
   0%,
   100% {
     transform: scale(1);
-    text-shadow: 0 0 0.15em rgba(255, 213, 74, 0.5);
+    text-shadow: 0 0 0.15em currentColor;
   }
   50% {
     transform: scale(1.14);
-    text-shadow: 0 0 0.5em rgba(255, 213, 74, 0.95), 0 0 1.1em rgba(255, 170, 0, 0.6);
+    text-shadow: 0 0 0.5em currentColor, 0 0 1.1em currentColor;
   }
 }

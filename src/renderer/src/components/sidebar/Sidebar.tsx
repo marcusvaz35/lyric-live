@@ -1,14 +1,13 @@
 import { useState } from 'react'
 import { ScenesList } from './ScenesList'
 import { EffectsList } from './EffectsList'
+import { Icon } from '../common/Icon'
 
 const TABS = [
-  { id: 'scenes', icon: '🎬', label: 'Cenas', enabled: true },
-  { id: 'songs', icon: '🎵', label: 'Músicas', enabled: true },
-  { id: 'bible', icon: '📖', label: 'Bíblia', enabled: true },
-  { id: 'online', icon: '🌐', label: 'Online', enabled: false },
-  { id: 'designs', icon: '🎨', label: 'Designs', enabled: false },
-  { id: 'effects', icon: '✨', label: 'Efeitos', enabled: true }
+  { id: 'scenes', icon: 'film', label: 'Cenas', enabled: true },
+  { id: 'songs', icon: 'music', label: 'Músicas', enabled: true },
+  { id: 'bible', icon: 'book', label: 'Bíblia', enabled: true },
+  { id: 'effects', icon: 'sparkles', label: 'Efeitos', enabled: true }
 ] as const
 
 const MODAL_TABS = new Set(['bible', 'songs'])
@@ -47,7 +46,7 @@ export function Sidebar({
               active === tab.id && !MODAL_TABS.has(tab.id) ? 'bg-accent/20 ring-1 ring-accent' : 'hover:bg-surface-800'
             } ${!tab.enabled ? 'opacity-30' : ''}`}
           >
-            <span>{tab.icon}</span>
+            <Icon name={tab.icon} size={19} />
           </button>
         ))}
       </div>

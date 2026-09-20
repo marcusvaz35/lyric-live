@@ -1,4 +1,6 @@
 import type { EffectId, Project, Scene } from './project'
+import type { PhraseLayout } from './phrase'
+import type { WordFontStyle } from './song'
 
 /** Nomes de canal IPC centralizados para evitar strings soltas nos dois lados. */
 export const IPC = {
@@ -7,6 +9,7 @@ export const IPC = {
   projectOpen: 'project:open',
   mediaImportAudio: 'media:importAudio',
   mediaReadFile: 'media:readFile',
+  mediaImportVisual: 'media:importVisual',
   liveOpen: 'live:open',
   liveClose: 'live:close',
   liveIsOpen: 'live:isOpen',
@@ -26,8 +29,17 @@ export const IPC = {
   songRead: 'song:read',
   songDelete: 'song:delete',
   songSearchOnline: 'song:searchOnline',
-  songFetchLyrics: 'song:fetchLyrics'
+  songFetchLyrics: 'song:fetchLyrics',
+  playlistGet: 'playlist:get',
+  playlistSave: 'playlist:save',
+  appCommand: 'app:command',
+  fontsList: 'fonts:list',
+  transcribeRun: 'transcribe:run',
+  transcribeProgress: 'transcribe:progress'
 } as const
+
+/** Comandos do menu do app (atalhos Ctrl/⌘+…) que o processo principal manda pro editor. */
+export type AppCommand = 'undo' | 'redo' | 'save' | 'saveAs' | 'open' | 'new'
 
 export interface ProjectFileResult {
   project: Project
@@ -57,6 +69,12 @@ export interface LiveOverlayPayload {
   effect?: EffectId | null
   /** Palavras (índice entre as não-vazias) destacadas com brilho pulsante. */
   highlights?: number[]
+  /** Fonte/cor/tamanho por palavra do texto simples. */
+  wordStyles?: Record<number, WordFontStyle>
+  /** Efeito só de algumas palavras do texto simples. */
+  wordEffects?: Record<number, EffectId>
+  /** Frase estilizada: quando presente, é desenhada no lugar do texto simples. */
+  phrase?: PhraseLayout | null
   /** Muda a cada "replay" — é o que faz a animação de entrada tocar de novo. */
   key?: number
 }

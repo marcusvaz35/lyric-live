@@ -11,7 +11,7 @@ import type {
   SceneAudio,
   TextLayer
 } from '@shared/types/project'
-import { createBackgroundLayer, createProject, createScene, createTextLayer } from '../lib/factories'
+import { createBackgroundLayer, createMediaLayer, createProject, createScene, createShapeLayer, createTextLayer } from '../lib/factories'
 
 const MIN_CLIP_DURATION = 0.2
 
@@ -23,6 +23,11 @@ interface ProjectState {
   selectedLayerId: string | null
   playhead: number
   isPlaying: boolean
+  /** Quantas ações dá pra desfazer/refazer (pra habilitar o menu Editar). */
+  undoCount: number
+  redoCount: number
+  /** Quando o projeto foi salvo pela última vez (pra mostrar o aviso "Salvo"). */
+  savedAt: number
 
   currentScene: () => Scene
   selectedLayer: () => Layer | null
@@ -36,7 +41,12 @@ interface ProjectState {
   setSceneAudio: (sceneId: string, audio: SceneAudio | null) => void
 
   addTextLayer: (text?: string) => void
+  addTextLayersFromSegments: (items: { text: string; start: number; end: number }[]) => void
   addBackgroundLayer: () => void
+  addShapeLayer: (kind: import('@shared/types/project').ShapeKind) => void
+  addMediaLayer: (file: { filePath: string; fileName: string }) => void
+  addLayers: (layers: import('@shared/types/project').Layer[]) => void
+  updateLayer: (layerId: string, patch: Record<string, unknown>) => void
   selectLayer: (layerId: string | null) => void
   updateTextLayer: (layerId: string, patch: Partial<TextLayer>) => void
   updateBackgroundFill: (layerId: string, fill: BackgroundLayer['fill']) => void
@@ -112,6 +122,9 @@ export const useProjectStore = create<ProjectState>((set, get) => {
     selectedLayerId: null,
     playhead: 0,
     isPlaying: false,
+    undoCount: 0,
+    redoCount: 0,
+    savedAt: 0,
 
     currentScene: () => {
       const { project, currentSceneId } = get()
@@ -135,6 +148,7 @@ export const useProjectStore = create<ProjectState>((set, get) => {
         playhead: 0,
         isPlaying: false
       })
+      resetHistory()
     },
 
     addScene: () => {
@@ -202,6 +216,68 @@ export const useProjectStore = create<ProjectState>((set, get) => {
       set({
         project: mapScenes(project, currentSceneId, (s) => ({ ...s, layers: [...s.layers, layer] })),
         selectedLayerId: layer.id,
+        dirty: true
+      })
+    },
+
+    addTextLayersFromSegments: (items) => {
+      const { project, currentSceneId } = get()
+      const scene = project.scenes.find((s) => s.id === currentSceneId)!
+      const created = items.map((item, i) => {
+        const layer = createTextLayer(item.text, scene.layers.length + i, scene.duration)
+        const start = Math.min(Math.max(0, item.start), scene.duration)
+        const duration = Math.max(0.5, Math.min(item.end, scene.duration) - start)
+        return { ...layer, segments: [{ id: nanoid(), start, duration }] }
+      })
+      if (created.length === 0) return
+      set({
+        project: mapScenes(project, currentSceneId, (s) => ({ ...s, layers: [...s.layers, ...created] })),
+        selectedLayerId: created[0].id,
+        dirty: true
+      })
+    },
+
+    addShapeLayer: (kind) => {
+      const { project, currentSceneId } = get()
+      const scene = project.scenes.find((s) => s.id === currentSceneId)!
+      const layer = createShapeLayer(kind, scene.layers.length, scene.duration)
+      set({
+        project: mapScenes(project, currentSceneId, (s) => ({ ...s, layers: [...s.layers, layer] })),
+        selectedLayerId: layer.id,
+        dirty: true
+      })
+    },
+
+    addMediaLayer: (file) => {
+      const { project, currentSceneId } = get()
+      const scene = project.scenes.find((s) => s.id === currentSceneId)!
+      const layer = createMediaLayer(file, scene.layers.length, scene.duration)
+      set({
+        project: mapScenes(project, currentSceneId, (s) => ({ ...s, layers: [...s.layers, layer] })),
+        selectedLayerId: layer.id,
+        dirty: true
+      })
+    },
+
+    /** Adiciona várias camadas prontas (ex.: compositor de frase); `order` é reatribuído. */
+    addLayers: (layers) => {
+      const { project, currentSceneId } = get()
+      if (layers.length === 0) return
+      const scene = project.scenes.find((s) => s.id === currentSceneId)!
+      const withOrder = layers.map((l, i) => ({ ...l, order: scene.layers.length + i }))
+      set({
+        project: mapScenes(project, currentSceneId, (s) => ({ ...s, layers: [...s.layers, ...withOrder] })),
+        selectedLayerId: withOrder[0].id,
+        dirty: true
+      })
+    },
+
+    updateLayer: (layerId, patch) => {
+      const { project, currentSceneId } = get()
+      set({
+        project: mapScenes(project, currentSceneId, (s) =>
+          mapLayer(s, layerId, (l) => ({ ...l, ...patch }) as typeof l)
+        ),
         dirty: true
       })
     },
@@ -470,7 +546,7 @@ export const useProjectStore = create<ProjectState>((set, get) => {
     play: () => set({ isPlaying: true }),
     pause: () => set({ isPlaying: false }),
 
-    loadProject: (project, filePath) =>
+    loadProject: (project, filePath) => {
       set({
         project,
         filePath,
@@ -479,8 +555,83 @@ export const useProjectStore = create<ProjectState>((set, get) => {
         selectedLayerId: null,
         playhead: 0,
         isPlaying: false
-      }),
+      })
+      resetHistory()
+    },
 
-    markSaved: (filePath) => set({ filePath, dirty: false })
+    markSaved: (filePath) => set({ filePath, dirty: false, savedAt: Date.now() })
   }
 })
+
+// ---- Desfazer / refazer ----
+// Guarda o projeto anterior a cada alteração. Mudanças em sequência rápida (arrastar,
+// digitar) viram uma única etapa: só abre uma nova quando passa GROUP_MS sem mexer.
+const HISTORY_LIMIT = 100
+const GROUP_MS = 600
+let past: Project[] = []
+let future: Project[] = []
+let groupTimer: ReturnType<typeof setTimeout> | null = null
+let applyingHistory = false
+
+function syncHistoryCounts(): void {
+  useProjectStore.setState({ undoCount: past.length, redoCount: future.length })
+}
+
+export function resetHistory(): void {
+  past = []
+  future = []
+  if (groupTimer) clearTimeout(groupTimer)
+  groupTimer = null
+  syncHistoryCounts()
+}
+
+useProjectStore.subscribe((state, prev) => {
+  if (applyingHistory || state.project === prev.project) return
+  if (groupTimer === null) {
+    past.push(prev.project)
+    if (past.length > HISTORY_LIMIT) past.shift()
+    future = []
+    syncHistoryCounts()
+  } else {
+    clearTimeout(groupTimer)
+  }
+  groupTimer = setTimeout(() => {
+    groupTimer = null
+  }, GROUP_MS)
+})
+
+function applyProject(project: Project): void {
+  applyingHistory = true
+  const s = useProjectStore.getState()
+  const scene = project.scenes.find((sc) => sc.id === s.currentSceneId) ?? project.scenes[0]
+  useProjectStore.setState({
+    project,
+    currentSceneId: scene?.id ?? '',
+    selectedLayerId: scene?.layers.some((l) => l.id === s.selectedLayerId) ? s.selectedLayerId : null,
+    playhead: Math.min(s.playhead, scene?.duration ?? 0),
+    dirty: true
+  })
+  applyingHistory = false
+  syncHistoryCounts()
+}
+
+function closeGroup(): void {
+  if (groupTimer) clearTimeout(groupTimer)
+  groupTimer = null
+}
+
+export function undo(): void {
+  closeGroup()
+  const previous = past.pop()
+  if (!previous) return
+  future.push(useProjectStore.getState().project)
+  applyProject(previous)
+}
+
+export function redo(): void {
+  closeGroup()
+  const next = future.pop()
+  if (!next) return
+  past.push(useProjectStore.getState().project)
+  applyProject(next)
+}

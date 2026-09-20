@@ -1,9 +1,12 @@
 import type { Layer } from '@shared/types/project'
 import { useProjectStore } from '../../state/projectStore'
+import { Icon, type IconName } from '../common/Icon'
 
-const TYPE_ICON: Record<Layer['type'], string> = {
-  text: '📝',
-  background: '🎨'
+const TYPE_ICON: Record<Layer['type'], IconName> = {
+  text: 'type',
+  shape: 'square',
+  media: 'image',
+  background: 'palette'
 }
 
 export function TimelineLayerRow({ layer }: { layer: Layer }) {
@@ -32,7 +35,7 @@ export function TimelineLayerRow({ layer }: { layer: Layer }) {
           toggleVisible(layer.id)
         }}
       >
-        {layer.visible ? '👁' : '🚫'}
+        <Icon name={layer.visible ? 'eye' : 'eye-off'} size={14} />
       </button>
       <button
         className="icon-btn h-6 w-6"
@@ -42,9 +45,9 @@ export function TimelineLayerRow({ layer }: { layer: Layer }) {
           toggleLocked(layer.id)
         }}
       >
-        {layer.locked ? '🔒' : '🔓'}
+        <Icon name={layer.locked ? 'lock' : 'unlock'} size={14} />
       </button>
-      <span>{TYPE_ICON[layer.type]}</span>
+      <Icon name={TYPE_ICON[layer.type]} size={14} className="text-neutral-400" />
       <span className="flex-1 truncate text-neutral-300">{layer.name}</span>
       <div className="hidden items-center gap-0.5 group-hover:flex">
         <button

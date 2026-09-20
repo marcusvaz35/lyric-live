@@ -4,6 +4,10 @@ import { join, extname, relative, isAbsolute } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import type { ImportedAudioFile } from '@shared/types/ipc'
 
+const VISUAL_FILTERS = [
+  { name: 'Imagem ou vídeo', extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif', 'mp4', 'mov', 'webm', 'm4v'] }
+]
+
 const AUDIO_FILTERS = [{ name: 'Áudio', extensions: ['mp3', 'wav', 'm4a', 'aac', 'ogg'] }]
 
 function mediaDir(): string {
@@ -25,6 +29,25 @@ export async function importAudioFile(): Promise<ImportedAudioFile | null> {
   await fs.copyFile(sourcePath, destPath)
 
   return { filePath: destPath, fileName }
+}
+
+/** Importa uma imagem ou vídeo (fundo, textura, overlay) copiando pra pasta de mídia do app. */
+export async function importVisualFile(): Promise<ImportedAudioFile | null> {
+  const win = BrowserWindow.getFocusedWindow()
+  const options = { title: 'Importar imagem ou vídeo', properties: ['openFile' as const], filters: VISUAL_FILTERS }
+  const result = win ? await dialog.showOpenDialog(win, options) : await dialog.showOpenDialog(options)
+  if (result.canceled || result.filePaths.length === 0) return null
+
+  const sourcePath = result.filePaths[0]
+  const fileName = sourcePath.split(/[/\\]/).pop() ?? 'midia'
+  await fs.mkdir(mediaDir(), { recursive: true })
+  const destPath = join(mediaDir(), `${randomUUID()}${extname(sourcePath)}`)
+  await fs.copyFile(sourcePath, destPath)
+  return { filePath: destPath, fileName }
+}
+
+export function mediaDirectory(): string {
+  return mediaDir()
 }
 
 /** Só lê arquivos de dentro da pasta de mídia do app — evita que o renderer peça

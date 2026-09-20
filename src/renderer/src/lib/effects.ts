@@ -18,6 +18,9 @@ export interface EffectOverlay {
   clipPath?: string
   /** Tracking extra somado ao letterSpacing normal do texto, em px. */
   letterSpacing?: number
+  /** Cor que substitui a do texto enquanto o efeito está agindo (ex.: ponta da caneta). */
+  color?: string
+  textShadow?: string
 }
 
 export const IDENTITY_OVERLAY: EffectOverlay = { x: 0, y: 0, scale: 1, rotation: 0, opacity: 1, blur: 0 }
@@ -382,6 +385,29 @@ export const EFFECTS: EffectDef[] = [
           scale: Math.max(0.001, e),
           opacity: clamp01(local * 2.5),
           blur: (1 - clamp01(local * 2)) * 8
+        }
+      }
+    }
+  },
+  {
+    id: 'write',
+    label: 'Escrita',
+    description: 'O texto vai sendo escrito da esquerda pra direita, com uma ponta branca brilhando na frente.',
+    mode: 'chars',
+    duration: 1.6,
+    charOverlay: (phase, charIndex, charCount) => {
+      // cada letra é "escrita" em sequência; enquanto está sendo escrita fica branca com brilho
+      const pos = phase * charCount
+      const u = clamp01(pos - charIndex)
+      const writing = u > 0 && u < 1 && phase < 1
+      const revealed = 1 - u
+      return {
+        overlay: {
+          ...IDENTITY_OVERLAY,
+          opacity: u > 0 ? 1 : 0,
+          clipPath: u >= 1 ? undefined : `inset(-15% ${(revealed * 100).toFixed(1)}% -15% -5%)`,
+          color: writing ? '#ffffff' : undefined,
+          textShadow: writing ? '0 0 14px rgba(255,255,255,0.95), 0 0 30px rgba(255,255,255,0.6)' : undefined
         }
       }
     }

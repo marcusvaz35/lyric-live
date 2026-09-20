@@ -1,10 +1,17 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { nanoid } from 'nanoid'
-import type { Song, SongSummary, SlideFx } from '@shared/types/song'
+import type { Playlist, Song, SongSummary, SlideFx, WordFontStyle } from '@shared/types/song'
+import type { EffectId } from '@shared/types/project'
 import { splitIntoBlocks } from '../../lib/songBlocks'
-import { EFFECTS } from '../../lib/effects'
 import { SongSearchOnlineModal } from './SongSearchOnlineModal'
 import { LiveToggleButton } from '../common/LiveToggleButton'
+import { PhraseComposerModal } from '../preview/PhraseComposerModal'
+import { LiveTextOverlay } from '../preview/LiveTextOverlay'
+import { EffectPicker } from '../preview/EffectPicker'
+import { FontPicker } from '../common/FontPicker'
+import { Icon } from '../common/Icon'
+import type { LiveOverlayPayload } from '@shared/types/ipc'
+import type { PhraseLayout } from '@shared/types/phrase'
 
 type Mode = 'list' | 'create' | 'reading'
 
@@ -17,6 +24,12 @@ interface DraftSong {
 
 const EMPTY_DRAFT: DraftSong = { title: '', artist: '', author: '', lyrics: '' }
 
+function moveItem<T>(list: T[], from: number, to: number): T[] {
+  const next = list.filter((_, idx) => idx !== from)
+  next.splice(to, 0, list[from])
+  return next
+}
+
 export function SongBrowserModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [songs, setSongs] = useState<SongSummary[] | null>(null)
   const [query, setQuery] = useState('')
@@ -25,6 +38,22 @@ export function SongBrowserModal({ open, onClose }: { open: boolean; onClose: ()
   const [saving, setSaving] = useState(false)
   const [onlineSearchOpen, setOnlineSearchOpen] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
+  const [composerOpen, setComposerOpen] = useState(false)
+  /** O clique numa palavra do slide destaca (brilho) ou seleciona pra trocar a fonte dela. */
+  const [wordMode, setWordMode] = useState<'highlight' | 'font'>('highlight')
+  const [fontWord, setFontWord] = useState<number | null>(null)
+  /** Palavra selecionada no modo "Destacar" (pra dar um efeito só nela). */
+  const [effectWord, setEffectWord] = useState<number | null>(null)
+  /** O que está sendo mandado pro LIVE agora — alimenta a janela de prévia. */
+  const [preview, setPreview] = useState<LiveOverlayPayload | null>(null)
+
+  /** Playlist do culto: ordem das músicas e qual está tocando (salva em arquivo). */
+  const [playlist, setPlaylist] = useState<Playlist>({ entries: [], currentUid: null })
+  const [plDrag, setPlDrag] = useState<number | null>(null)
+  const [plDropAt, setPlDropAt] = useState<number | null>(null)
+  /** Música da biblioteca sendo arrastada pra playlist, e se o cursor está sobre a área da playlist. */
+  const [libDrag, setLibDrag] = useState<string | null>(null)
+  const [plOver, setPlOver] = useState(false)
 
   const [selectedSong, setSelectedSong] = useState<Song | null>(null)
   const [blockIndex, setBlockIndex] = useState(0)
@@ -34,14 +63,71 @@ export function SongBrowserModal({ open, onClose }: { open: boolean; onClose: ()
   const [editingIndex, setEditingIndex] = useState<number | null>(null)
   const [editText, setEditText] = useState('')
   const [editIsNew, setEditIsNew] = useState(false)
+  /** Arrastar slide pra reordenar: quem está sendo arrastado e o vão (0..n) onde vai cair. */
+  const [dragIndex, setDragIndex] = useState<number | null>(null)
+  const [dropAt, setDropAt] = useState<number | null>(null)
 
   const refreshSongs = (): void => {
     window.api?.song.list().then(setSongs)
   }
 
+  const updatePlaylist = (next: Playlist): void => {
+    setPlaylist(next)
+    window.api?.playlist.save(next)
+  }
+
+  const addToPlaylist = (songId: string): void =>
+    updatePlaylist({ ...playlist, entries: [...playlist.entries, { uid: nanoid(), songId }] })
+
+  const addToPlaylistAt = (songId: string, at: number): void => {
+    const entries = [...playlist.entries]
+    entries.splice(Math.min(Math.max(0, at), entries.length), 0, { uid: nanoid(), songId })
+    updatePlaylist({ ...playlist, entries })
+  }
+
+  /** Solta algo na playlist: música da biblioteca entra no vão; item da playlist muda de lugar. */
+  const dropOnPlaylist = (at: number): void => {
+    if (libDrag) addToPlaylistAt(libDrag, at)
+    else if (plDrag !== null) moveEntry(plDrag, at > plDrag ? at - 1 : at)
+    setLibDrag(null)
+    setPlDrag(null)
+    setPlDropAt(null)
+    setPlOver(false)
+  }
+
+  const removeFromPlaylist = (uid: string): void =>
+    updatePlaylist({
+      entries: playlist.entries.filter((e) => e.uid !== uid),
+      currentUid: playlist.currentUid === uid ? null : playlist.currentUid
+    })
+
+  const moveEntry = (from: number, to: number): void => {
+    if (to < 0 || to >= playlist.entries.length || from === to) return
+    updatePlaylist({ ...playlist, entries: moveItem(playlist.entries, from, to) })
+  }
+
+  const clearPlaylist = (): void => {
+    if (playlist.entries.length === 0) return
+    if (window.confirm('Limpar toda a playlist do culto?')) updatePlaylist({ entries: [], currentUid: null })
+  }
+
+  const songTitle = (songId: string): SongSummary | undefined => songs?.find((x) => x.id === songId)
+
+  const currentIndex = playlist.entries.findIndex((e) => e.uid === playlist.currentUid)
+  const nextEntry = playlist.entries[currentIndex + 1] ?? (currentIndex === -1 ? playlist.entries[0] : undefined)
+
+  const playEntry = (uid: string): void => {
+    const entry = playlist.entries.find((e) => e.uid === uid)
+    if (!entry) return
+    setPlaylist({ ...playlist, currentUid: uid })
+    window.api?.playlist.save({ ...playlist, currentUid: uid })
+    openReading(entry.songId)
+  }
+
   useEffect(() => {
     if (!open) return
     refreshSongs()
+    window.api?.playlist.get().then(setPlaylist)
   }, [open])
 
   useEffect(() => {
@@ -67,13 +153,18 @@ export function SongBrowserModal({ open, onClose }: { open: boolean; onClose: ()
     if (text === undefined) return
     const fx = song.blockFx?.[index]
     if (replay) overlayKeyRef.current = Date.now()
-    window.api?.live.pushOverlay({
+    const payload: LiveOverlayPayload = {
       text,
       reference: '',
       effect: fx?.effect ?? null,
       highlights: fx?.highlights ?? [],
+      wordStyles: fx?.wordStyles,
+      wordEffects: fx?.wordEffects,
+      phrase: fx?.phrase ?? null,
       key: overlayKeyRef.current
-    })
+    }
+    setPreview(payload)
+    window.api?.live.pushOverlay(payload)
   }
 
   const openReading = async (id: string): Promise<void> => {
@@ -93,6 +184,7 @@ export function SongBrowserModal({ open, onClose }: { open: boolean; onClose: ()
   }
 
   const exitReading = (): void => {
+    setPreview(null)
     setMode('list')
     setSelectedSong(null)
     window.api?.live.pushOverlay(null)
@@ -157,10 +249,37 @@ export function SongBrowserModal({ open, onClose }: { open: boolean; onClose: ()
     const newBlocks = selectedSong.blocks.map((b, idx) => (idx === index ? text : b))
     // palavras mudaram de lugar: mantém o efeito do slide, limpa os destaques
     const newFx = (selectedSong.blockFx ?? newBlocks.map(() => null)).map((fx, idx) =>
-      idx === index && fx ? { ...fx, highlights: [] } : fx
+      idx === index && fx ? { ...fx, highlights: [], wordStyles: undefined, wordEffects: undefined, phrase: null } : fx
     )
     const updated = await persistBlocks(selectedSong, newBlocks, newFx)
     pushBlock(updated, index)
+  }
+
+  /** Salva o texto em edição e já abre um slide novo, vazio, logo depois dele. */
+  const commitAndAddNext = async (): Promise<void> => {
+    if (editingIndex === null || !selectedSong) return
+    const text = editText
+      .split('\n')
+      .map((l) => l.trim())
+      .join('\n')
+      .trim()
+    if (!text) return
+    const index = editingIndex
+    const newBlocks = selectedSong.blocks.map((b, idx) => (idx === index ? text : b))
+    const fx = selectedSong.blockFx ?? newBlocks.map(() => null)
+    const savedFx = fx.map((f, idx) => (idx === index && f ? { ...f, highlights: [], wordStyles: undefined, wordEffects: undefined, phrase: null } : f))
+    const saved = await persistBlocks(selectedSong, newBlocks, savedFx)
+
+    const at = index + 1
+    setSelectedSong({
+      ...saved,
+      blocks: [...saved.blocks.slice(0, at), '', ...saved.blocks.slice(at)],
+      blockFx: [...(saved.blockFx ?? []).slice(0, at), null, ...(saved.blockFx ?? []).slice(at)]
+    })
+    setBlockIndex(at)
+    setEditingIndex(at)
+    setEditIsNew(true)
+    setEditText('')
   }
 
   const cancelEditNew = (index: number): void => {
@@ -191,16 +310,73 @@ export function SongBrowserModal({ open, onClose }: { open: boolean; onClose: ()
     startEdit(at, true)
   }
 
+  /** Move o slide `from` pro vão `gap` (0..n = posição ANTES desse índice na lista original),
+   * levando junto o efeito dele. O slide que está no LIVE continua o mesmo — só muda de
+   * posição —, então nada é reenviado pro projetor. */
+  const moveBlock = async (from: number, gap: number): Promise<void> => {
+    if (!selectedSong) return
+    const to = gap > from ? gap - 1 : gap
+    if (to === from) return
+    const fx = selectedSong.blocks.map((_, idx) => selectedSong.blockFx?.[idx] ?? null)
+    let nextSelected = blockIndex
+    if (blockIndex === from) nextSelected = to
+    else if (from < blockIndex && to >= blockIndex) nextSelected = blockIndex - 1
+    else if (from > blockIndex && to <= blockIndex) nextSelected = blockIndex + 1
+    setBlockIndex(nextSelected)
+    await persistBlocks(selectedSong, moveItem(selectedSong.blocks, from, to), moveItem(fx, from, to))
+  }
+
+  const endDrag = (): void => {
+    setDragIndex(null)
+    setDropAt(null)
+  }
+
   /** Atualiza efeito/destaques do slide atual, salva na música e manda pro LIVE. */
   const updateSlideFx = async (patch: Partial<SlideFx>, replay: boolean): Promise<void> => {
     if (!selectedSong) return
     const fxList = selectedSong.blockFx ?? selectedSong.blocks.map(() => null)
     const current: SlideFx = fxList[blockIndex] ?? { effect: null, highlights: [] }
     const next: SlideFx = { ...current, ...patch }
-    const cleaned = next.effect === null && next.highlights.length === 0 ? null : next
+    const hasWordStyles =
+      Object.keys(next.wordStyles ?? {}).length > 0 || Object.keys(next.wordEffects ?? {}).length > 0
+    const cleaned = next.effect === null && next.highlights.length === 0 && !next.phrase && !hasWordStyles ? null : next
     const newFx = fxList.map((fx, idx) => (idx === blockIndex ? cleaned : fx))
     const updated = await persistBlocks(selectedSong, selectedSong.blocks, newFx)
     pushBlock(updated, blockIndex, replay)
+  }
+
+  const setWordStyle = (wordIdx: number, patch: Partial<WordFontStyle> | null): void => {
+    const current = selectedSong?.blockFx?.[blockIndex]?.wordStyles ?? {}
+    const next = { ...current }
+    if (patch === null) delete next[wordIdx]
+    else {
+      const merged = { ...next[wordIdx], ...patch }
+      // sem nenhum ajuste sobrando, tira a palavra da lista
+      if (Object.values(merged).every((v) => v === undefined)) delete next[wordIdx]
+      else next[wordIdx] = merged
+    }
+    updateSlideFx({ wordStyles: next }, false)
+  }
+
+  const setWordEffect = (wordIdx: number, effect: EffectId | null): void => {
+    const next = { ...(selectedSong?.blockFx?.[blockIndex]?.wordEffects ?? {}) }
+    if (effect === null) delete next[wordIdx]
+    else next[wordIdx] = effect
+    // replay: pra ver o efeito da palavra tocando
+    updateSlideFx({ wordEffects: next }, true)
+  }
+
+  /** Tira o brilho e o efeito de uma palavra de uma vez (des-seleciona). */
+  const clearWord = (wordIdx: number): void => {
+    const fx = selectedSong?.blockFx?.[blockIndex]
+    const hadEffect = Boolean(fx?.wordEffects?.[wordIdx])
+    const effects = { ...(fx?.wordEffects ?? {}) }
+    delete effects[wordIdx]
+    updateSlideFx(
+      { highlights: (fx?.highlights ?? []).filter((w) => w !== wordIdx), wordEffects: effects },
+      hadEffect
+    )
+    setEffectWord(null)
   }
 
   const toggleHighlight = (wordIdx: number): void => {
@@ -213,6 +389,10 @@ export function SongBrowserModal({ open, onClose }: { open: boolean; onClose: ()
     e.stopPropagation()
     if (!window.api) return
     await window.api.song.delete(id)
+    updatePlaylist({
+      entries: playlist.entries.filter((en) => en.songId !== id),
+      currentUid: playlist.entries.find((en) => en.uid === playlist.currentUid)?.songId === id ? null : playlist.currentUid
+    })
     refreshSongs()
   }
 
@@ -252,7 +432,8 @@ export function SongBrowserModal({ open, onClose }: { open: boolean; onClose: ()
           else setEditingIndex(null)
         } else if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
           e.preventDefault()
-          commitEdit()
+          if (e.shiftKey) commitAndAddNext()
+          else commitEdit()
         }
         return
       }
@@ -269,6 +450,8 @@ export function SongBrowserModal({ open, onClose }: { open: boolean; onClose: ()
         return
       }
 
+      if (composerOpen) return
+
       if (e.key === 'Escape') {
         e.preventDefault()
         if (onlineSearchOpen) setOnlineSearchOpen(false)
@@ -281,7 +464,7 @@ export function SongBrowserModal({ open, onClose }: { open: boolean; onClose: ()
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, mode, onlineSearchOpen, blockIndex, selectedSong, onClose, editingIndex, editText, editIsNew])
+  }, [open, mode, onlineSearchOpen, blockIndex, selectedSong, onClose, editingIndex, editText, editIsNew, composerOpen])
 
   if (!open) return null
 
@@ -293,7 +476,7 @@ export function SongBrowserModal({ open, onClose }: { open: boolean; onClose: ()
       <div className="relative flex h-full w-full max-w-6xl flex-col overflow-hidden rounded-xl border border-surface-700 bg-surface-900 shadow-2xl">
         <div className="flex items-center justify-between border-b border-surface-800 px-4 py-3">
           <div className="flex items-center gap-2 text-sm font-semibold text-neutral-100">
-            <span>🎵</span>
+            <Icon name="music" size={16} className="text-neutral-400" />
             <span>
               {mode === 'create' ? 'Nova música' : mode === 'reading' ? selectedSong?.title : 'Músicas'}
             </span>
@@ -307,65 +490,228 @@ export function SongBrowserModal({ open, onClose }: { open: boolean; onClose: ()
         </div>
 
         {mode === 'list' && (
-          <>
-            <div className="flex items-center gap-2 border-b border-surface-800 px-4 py-3">
-              <input
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="Pesquisar na sua biblioteca..."
-                className="field-input flex-1"
-              />
-              <button
-                onClick={() => setOnlineSearchOpen(true)}
-                className="rounded-md border border-surface-700 px-3 py-1.5 text-sm text-neutral-300 hover:bg-surface-800"
-              >
-                Pesquisar na internet
-              </button>
-              <button
-                onClick={() => {
-                  setDraft(EMPTY_DRAFT)
-                  setNotice(null)
-                  setMode('create')
-                }}
-                className="rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-white hover:bg-accent-hover"
-              >
-                + Nova música
-              </button>
+          <div className="flex flex-1 overflow-hidden">
+            <div className="flex min-w-0 flex-1 flex-col">
+              <div className="flex items-center gap-2 border-b border-surface-800 px-4 py-3">
+                <input
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="Pesquisar na sua biblioteca..."
+                  className="field-input flex-1"
+                />
+                <button
+                  onClick={() => setOnlineSearchOpen(true)}
+                  className="rounded-md border border-surface-700 px-3 py-1.5 text-sm text-neutral-300 hover:bg-surface-800"
+                >
+                  Pesquisar na internet
+                </button>
+                <button
+                  onClick={() => {
+                    setDraft(EMPTY_DRAFT)
+                    setNotice(null)
+                    setMode('create')
+                  }}
+                  className="rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-white hover:bg-accent-hover"
+                >
+                  + Nova música
+                </button>
+              </div>
+
+              <div className="flex-1 overflow-y-scroll p-2">
+                {!songs ? (
+                  <div className="flex h-full items-center justify-center text-sm text-neutral-600">
+                    {window.api ? 'Carregando…' : 'API do Electron indisponível neste ambiente.'}
+                  </div>
+                ) : filteredSongs.length === 0 ? (
+                  <div className="flex h-full items-center justify-center text-sm text-neutral-600">
+                    Nenhuma música salva ainda.
+                  </div>
+                ) : (
+                  filteredSongs.map((s) => (
+                    <div
+                      key={s.id}
+                      draggable
+                      onDragStart={(e) => {
+                        e.dataTransfer.effectAllowed = 'copyMove'
+                        e.dataTransfer.setData('text/plain', s.id)
+                        setLibDrag(s.id)
+                      }}
+                      onDragEnd={() => {
+                        setLibDrag(null)
+                        setPlDropAt(null)
+                        setPlOver(false)
+                      }}
+                      title="Arraste para a playlist do culto"
+                      className={`group flex w-full cursor-grab items-center gap-1 rounded-md pr-2 hover:bg-surface-800 ${
+                        libDrag === s.id ? 'opacity-50' : ''
+                      }`}
+                    >
+                      <button onClick={() => openReading(s.id)} className="min-w-0 flex-1 px-3 py-2.5 text-left">
+                        <div className="truncate text-sm text-neutral-100">{s.title}</div>
+                        <div className="truncate text-xs text-neutral-500">{s.artist}</div>
+                      </button>
+                      <button
+                        onClick={() => addToPlaylist(s.id)}
+                        title="Adicionar à playlist do culto"
+                        className="flex h-7 shrink-0 items-center gap-1 rounded-md border border-surface-700 px-2 text-xs text-neutral-300 hover:border-accent hover:text-neutral-100"
+                      >
+                        <Icon name="plus" size={12} />
+                        Culto
+                      </button>
+                      <button
+                        onClick={(e) => handleDelete(s.id, e)}
+                        title="Excluir da biblioteca"
+                        className="icon-btn h-7 w-7 shrink-0 opacity-50 hover:!opacity-100"
+                      >
+                        <Icon name="trash" size={14} />
+                      </button>
+                    </div>
+                  ))
+                )}
+              </div>
             </div>
 
-            <div className="flex-1 overflow-y-scroll p-2">
-              {!songs ? (
-                <div className="flex h-full items-center justify-center text-sm text-neutral-600">
-                  {window.api ? 'Carregando…' : 'API do Electron indisponível neste ambiente.'}
+            <aside
+              onDragOver={(e) => {
+                if (libDrag === null && plDrag === null) return
+                e.preventDefault()
+                setPlOver(true)
+                // fora de qualquer item: cai no fim da lista
+                if (!(e.target as HTMLElement).closest('[data-pl-row]')) setPlDropAt(playlist.entries.length)
+              }}
+              onDragLeave={(e) => {
+                if (!e.currentTarget.contains(e.relatedTarget as Node | null)) {
+                  setPlOver(false)
+                  setPlDropAt(null)
+                }
+              }}
+              onDrop={(e) => {
+                e.preventDefault()
+                dropOnPlaylist(plDropAt ?? playlist.entries.length)
+              }}
+              className={`flex w-[340px] shrink-0 flex-col border-l bg-surface-950/40 transition-colors ${
+                plOver && libDrag ? 'border-accent bg-accent/10' : 'border-surface-800'
+              }`}
+            >
+              <div className="flex items-center justify-between border-b border-surface-800 px-4 py-3">
+                <div className="flex items-center gap-2 text-sm font-semibold text-neutral-100">
+                  <Icon name="list" size={15} className="text-neutral-400" />
+                  Culto
+                  <span className="text-xs font-normal text-neutral-500">
+                    {playlist.entries.length} {playlist.entries.length === 1 ? 'música' : 'músicas'}
+                  </span>
                 </div>
-              ) : filteredSongs.length === 0 ? (
-                <div className="flex h-full items-center justify-center text-sm text-neutral-600">
-                  Nenhuma música salva ainda.
-                </div>
-              ) : (
-                filteredSongs.map((s) => (
-                  <button
-                    key={s.id}
-                    onClick={() => openReading(s.id)}
-                    className="flex w-full items-center justify-between rounded-md px-3 py-2.5 text-left hover:bg-surface-800"
-                  >
-                    <div>
-                      <div className="text-sm text-neutral-100">{s.title}</div>
-                      <div className="text-xs text-neutral-500">{s.artist}</div>
-                    </div>
-                    <span
-                      role="button"
-                      onClick={(e) => handleDelete(s.id, e)}
-                      title="Excluir"
-                      className="icon-btn h-7 w-7 shrink-0 text-sm opacity-50 hover:!opacity-100"
-                    >
-                      🗑
+                <button
+                  onClick={clearPlaylist}
+                  disabled={playlist.entries.length === 0}
+                  className="rounded-md px-2 py-1 text-[11px] text-neutral-500 hover:bg-surface-800 hover:text-neutral-200 disabled:opacity-40"
+                >
+                  Limpar
+                </button>
+              </div>
+
+              {playlist.entries.length > 0 && (
+                <div className="border-b border-surface-800 px-4 py-2.5 text-xs">
+                  <div className="text-neutral-500">
+                    Tocando:{' '}
+                    <span className="text-neutral-200">
+                      {currentIndex >= 0 ? (songTitle(playlist.entries[currentIndex].songId)?.title ?? 'Música removida') : '—'}
                     </span>
-                  </button>
-                ))
+                  </div>
+                  <div className="mt-0.5 text-neutral-500">
+                    Próxima:{' '}
+                    <span className="text-accent">
+                      {nextEntry ? (songTitle(nextEntry.songId)?.title ?? 'Música removida') : 'fim da playlist'}
+                    </span>
+                  </div>
+                </div>
               )}
-            </div>
-          </>
+
+              <div className="flex-1 overflow-y-auto p-2">
+                {playlist.entries.length === 0 ? (
+                  <div className="px-3 py-8 text-center text-sm leading-relaxed text-neutral-600">
+                    Monte a ordem do culto: arraste uma música da biblioteca até aqui, ou clique em “+ Culto”. A playlist
+                    fica salva mesmo fechando o programa.
+                  </div>
+                ) : (
+                  playlist.entries.map((entry, i) => {
+                    const song = songTitle(entry.songId)
+                    const isCurrent = entry.uid === playlist.currentUid
+                    const isNext = nextEntry?.uid === entry.uid
+                    return (
+                      <div
+                        key={entry.uid}
+                        data-pl-row
+                        draggable
+                        onDragStart={() => setPlDrag(i)}
+                        onDragOver={(e) => {
+                          e.preventDefault()
+                          const r = e.currentTarget.getBoundingClientRect()
+                          setPlDropAt(e.clientY < r.top + r.height / 2 ? i : i + 1)
+                        }}
+                        onDragEnd={() => {
+                          setPlDrag(null)
+                          setPlDropAt(null)
+                          setPlOver(false)
+                        }}
+                        onDrop={(e) => {
+                          e.preventDefault()
+                          e.stopPropagation()
+                          dropOnPlaylist(plDropAt ?? i)
+                        }}
+                        className={`group mb-1 flex items-center gap-1 rounded-md border px-1.5 py-1.5 transition-colors ${
+                          isCurrent ? 'border-accent bg-accent/15' : 'border-transparent hover:bg-surface-800'
+                        } ${plDrag === i ? 'opacity-40' : ''} ${
+                          plDropAt === i && (plDrag !== null || libDrag) ? 'border-t-accent' : ''
+                        }`}
+                      >
+                        <span className="cursor-grab text-neutral-600 group-hover:text-neutral-400" title="Arraste para reordenar">
+                          <Icon name="grip" size={14} />
+                        </span>
+                        <span className="w-5 shrink-0 text-center text-xs text-neutral-500">{i + 1}</span>
+                        <button onClick={() => playEntry(entry.uid)} className="min-w-0 flex-1 text-left">
+                          <div className="truncate text-sm text-neutral-100">{song?.title ?? 'Música removida'}</div>
+                          <div className="flex items-center gap-1.5 truncate text-[11px] text-neutral-500">
+                            {isCurrent && <span className="font-medium text-accent">tocando</span>}
+                            {isNext && !isCurrent && <span className="font-medium text-amber-300">próxima</span>}
+                            <span className="truncate">{song?.artist}</span>
+                          </div>
+                        </button>
+                        <div className="flex shrink-0 items-center">
+                          <button
+                            onClick={() => moveEntry(i, i - 1)}
+                            disabled={i === 0}
+                            title="Subir"
+                            className="icon-btn h-6 w-6 disabled:opacity-30"
+                          >
+                            <Icon name="chevron-up" size={13} />
+                          </button>
+                          <button
+                            onClick={() => moveEntry(i, i + 1)}
+                            disabled={i === playlist.entries.length - 1}
+                            title="Descer"
+                            className="icon-btn h-6 w-6 disabled:opacity-30"
+                          >
+                            <Icon name="chevron" size={13} />
+                          </button>
+                          <button
+                            onClick={() => removeFromPlaylist(entry.uid)}
+                            title="Tirar da playlist"
+                            className="icon-btn h-6 w-6"
+                          >
+                            <Icon name="x" size={13} />
+                          </button>
+                        </div>
+                      </div>
+                    )
+                  })
+                )}
+                {plDropAt === playlist.entries.length && libDrag && playlist.entries.length > 0 && (
+                  <div className="mx-1 h-0.5 rounded bg-accent" />
+                )}
+              </div>
+            </aside>
+          </div>
         )}
 
         {mode === 'create' && (
@@ -438,6 +784,23 @@ export function SongBrowserModal({ open, onClose }: { open: boolean; onClose: ()
                 <span className="font-medium text-accent">{selectedSong.title}</span> — {selectedSong.artist}
               </span>
               <div className="flex items-center gap-3">
+                {nextEntry && (
+                  <button
+                    onClick={() => playEntry(nextEntry.uid)}
+                    title="Ir para a próxima música da playlist"
+                    className="flex items-center gap-1.5 rounded-md border border-surface-700 px-2 py-1 text-neutral-300 hover:border-accent hover:text-neutral-100"
+                  >
+                    Próxima: {songTitle(nextEntry.songId)?.title ?? 'música removida'}
+                    <Icon name="arrow-right" size={12} />
+                  </button>
+                )}
+                <button
+                  onClick={() => setComposerOpen(true)}
+                  title="Estilizar este slide ao vivo: fonte por palavra, cascata, tira. Não vai pra timeline."
+                  className="rounded-md bg-accent px-2.5 py-1 text-xs font-medium text-white hover:bg-accent-hover"
+                >
+                  + Frase
+                </button>
                 <button
                   onClick={addBlock}
                   className="rounded-md border border-surface-700 px-2 py-1 text-neutral-300 hover:bg-surface-800"
@@ -449,7 +812,8 @@ export function SongBrowserModal({ open, onClose }: { open: boolean; onClose: ()
                 </span>
               </div>
             </div>
-            <div className="grid flex-1 grid-cols-3 content-start gap-3 overflow-y-scroll p-4">
+            <div className="flex flex-1 overflow-hidden">
+            <div className="grid flex-1 grid-cols-2 content-start gap-3 overflow-y-scroll p-4 2xl:grid-cols-3">
               {blocks.map((text, i) => (
                 <div
                   key={i}
@@ -462,12 +826,52 @@ export function SongBrowserModal({ open, onClose }: { open: boolean; onClose: ()
                     pushBlock(selectedSong, i)
                   }}
                   onDoubleClick={() => editingIndex === null && startEdit(i)}
-                  className={`group relative flex aspect-video cursor-pointer items-center justify-center whitespace-pre-line rounded-lg border-2 bg-black p-3 text-center text-sm font-semibold leading-snug text-white transition-colors ${
+                  draggable={editingIndex === null}
+                  onDragStart={(e) => {
+                    setDragIndex(i)
+                    e.dataTransfer.effectAllowed = 'move'
+                    e.dataTransfer.setData('text/plain', String(i))
+                  }}
+                  onDragOver={(e) => {
+                    if (dragIndex === null) return
+                    e.preventDefault()
+                    e.dataTransfer.dropEffect = 'move'
+                    const rect = e.currentTarget.getBoundingClientRect()
+                    const gap = e.clientX > rect.left + rect.width / 2 ? i + 1 : i
+                    if (gap !== dropAt) setDropAt(gap)
+                  }}
+                  onDrop={(e) => {
+                    e.preventDefault()
+                    if (dragIndex !== null && dropAt !== null) moveBlock(dragIndex, dropAt)
+                    endDrag()
+                  }}
+                  onDragEnd={endDrag}
+                  className={`group relative flex aspect-video items-center justify-center whitespace-pre-line rounded-lg border-2 bg-black p-3 text-center text-sm font-semibold leading-snug text-white transition-colors ${
+                    editingIndex === null ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'
+                  } ${dragIndex === i ? 'opacity-40' : ''} ${
                     i === blockIndex ? 'border-accent' : 'border-surface-700 hover:border-surface-600'
                   }`}
                 >
+                  {dragIndex !== null && dropAt !== null && dropAt !== dragIndex && dropAt !== dragIndex + 1 && (
+                    <>
+                      {dropAt === i && (
+                        <span className="pointer-events-none absolute -left-[9px] bottom-0 top-0 z-20 w-1 rounded bg-accent" />
+                      )}
+                      {dropAt === i + 1 && (
+                        <span className="pointer-events-none absolute -right-[9px] bottom-0 top-0 z-20 w-1 rounded bg-accent" />
+                      )}
+                    </>
+                  )}
                   {editingIndex === i ? (
                     <div className="flex h-full w-full flex-col gap-2" onClick={(e) => e.stopPropagation()}>
+                      <button
+                        onClick={commitAndAddNext}
+                        disabled={!editText.trim()}
+                        title="Salvar e criar um novo slide ao lado (Shift+⌘/Ctrl+Enter)"
+                        className="absolute -right-4 top-1/2 z-10 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full bg-accent text-lg font-bold leading-none text-white shadow-lg ring-2 ring-surface-900 hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-40"
+                      >
+                        +
+                      </button>
                       <textarea
                         autoFocus
                         value={editText}
@@ -493,9 +897,13 @@ export function SongBrowserModal({ open, onClose }: { open: boolean; onClose: ()
                   ) : (
                     <>
                       {text}
-                      {(selectedSong.blockFx?.[i]?.effect || selectedSong.blockFx?.[i]?.highlights.length) && (
+                      {Boolean(
+                        selectedSong.blockFx?.[i]?.effect ||
+                          selectedSong.blockFx?.[i]?.phrase ||
+                          selectedSong.blockFx?.[i]?.highlights.length
+                      ) && (
                         <span className="absolute bottom-1.5 left-2 text-xs" title="Slide com efeito">
-                          ✨
+                          <Icon name="sparkles" size={13} className="text-accent" />
                         </span>
                       )}
                       <div className="absolute right-1.5 top-1.5 hidden gap-1 group-hover:flex">
@@ -507,7 +915,7 @@ export function SongBrowserModal({ open, onClose }: { open: boolean; onClose: ()
                           title="Editar texto"
                           className="icon-btn h-6 w-6 bg-surface-800 text-xs"
                         >
-                          ✎
+                          <Icon name="pencil" size={12} />
                         </button>
                         {blocks.length > 1 && (
                           <button
@@ -518,7 +926,7 @@ export function SongBrowserModal({ open, onClose }: { open: boolean; onClose: ()
                             title="Excluir slide"
                             className="icon-btn h-6 w-6 bg-surface-800 text-xs"
                           >
-                            🗑
+                            <Icon name="trash" size={12} />
                           </button>
                         )}
                       </div>
@@ -528,67 +936,276 @@ export function SongBrowserModal({ open, onClose }: { open: boolean; onClose: ()
               ))}
               <button
                 onClick={addBlock}
-                className="flex aspect-video items-center justify-center rounded-lg border-2 border-dashed border-surface-700 text-sm text-neutral-500 hover:border-surface-600 hover:text-neutral-300"
+                onDragOver={(e) => {
+                  if (dragIndex === null) return
+                  e.preventDefault()
+                  e.dataTransfer.dropEffect = 'move'
+                  if (dropAt !== blocks.length) setDropAt(blocks.length)
+                }}
+                onDrop={(e) => {
+                  e.preventDefault()
+                  if (dragIndex !== null) moveBlock(dragIndex, blocks.length)
+                  endDrag()
+                }}
+                className={`flex aspect-video items-center justify-center rounded-lg border-2 border-dashed text-sm hover:border-surface-600 hover:text-neutral-300 ${
+                  dragIndex !== null && dropAt === blocks.length
+                    ? 'border-accent text-neutral-200'
+                    : 'border-surface-700 text-neutral-500'
+                }`}
               >
                 + Novo slide
               </button>
             </div>
-            {editingIndex === null && blocks[blockIndex] !== undefined && (
-              <div className="flex items-start gap-4 border-t border-surface-800 bg-surface-950/60 px-4 py-3">
-                <div className="w-56 shrink-0">
+            <aside className="flex w-[380px] shrink-0 flex-col gap-4 overflow-y-auto border-l border-surface-800 p-4">
+              <div>
+                <div className="field-label mb-1 flex items-center justify-between">
+                  <span>Prévia do que está no LIVE</span>
+                  <span className="text-neutral-600">slide {blockIndex + 1}</span>
+                </div>
+                <div
+                  className="relative w-full overflow-hidden rounded-md border border-surface-700 bg-black"
+                  style={{ aspectRatio: '16 / 9', containerType: 'inline-size' }}
+                >
+                  {preview ? (
+                    <LiveTextOverlay embedded overlay={preview} />
+                  ) : (
+                    <div className="flex h-full items-center justify-center text-xs text-neutral-600">
+                      Nada em exibição
+                    </div>
+                  )}
+                </div>
+              </div>
+              {editingIndex === null && blocks[blockIndex] !== undefined && (
+                <>
+                <div>
                   <div className="field-label mb-1">Efeito de entrada do slide {blockIndex + 1}</div>
-                  <select
-                    value={selectedSong.blockFx?.[blockIndex]?.effect ?? ''}
-                    onChange={(e) =>
-                      updateSlideFx({ effect: (e.target.value || null) as SlideFx['effect'] }, true)
-                    }
-                    className="field-input w-full"
-                  >
-                    <option value="">Sem efeito</option>
-                    {EFFECTS.map((fx) => (
-                      <option key={fx.id} value={fx.id}>
-                        {fx.label}
-                      </option>
-                    ))}
-                  </select>
+                  <EffectPicker
+                    value={selectedSong.blockFx?.[blockIndex]?.effect ?? 'none'}
+                    onChange={(v) => updateSlideFx({ effect: v === 'none' ? null : (v as SlideFx['effect']) }, true)}
+                    leading={[{ value: 'none', label: 'Sem efeito' }]}
+                  />
                   <button
                     onClick={() => pushBlock(selectedSong, blockIndex, true)}
                     className="mt-2 w-full rounded-md border border-surface-700 px-2 py-1 text-xs text-neutral-300 hover:bg-surface-800"
                   >
-                    ▶ Repetir no LIVE
+                    <Icon name="replay" size={12} className="mr-1.5 inline" />Repetir no LIVE
                   </button>
+                  {selectedSong.blockFx?.[blockIndex]?.phrase && (
+                    <button
+                      onClick={() => updateSlideFx({ phrase: null }, true)}
+                      className="mt-2 w-full rounded-md border border-amber-400/50 px-2 py-1 text-xs text-amber-200 hover:bg-surface-800"
+                    >
+                      Remover estilo de frase (volta ao texto simples)
+                    </button>
+                  )}
                 </div>
-                <div className="min-w-0 flex-1">
+                <div>
+                  {selectedSong.blockFx?.[blockIndex]?.phrase ? (
+                    <div className="mb-1 text-[11px] leading-snug text-neutral-500">
+                      Este slide usa estilo de frase: as fontes de cada palavra se ajustam em “+ Frase”.
+                    </div>
+                  ) : (
+                    <div className="mb-2 flex overflow-hidden rounded-md border border-surface-700 text-xs">
+                      {(
+                        [
+                          ['highlight', 'Destacar palavra'],
+                          ['font', 'Trocar fonte']
+                        ] as const
+                      ).map(([mode, label]) => (
+                        <button
+                          key={mode}
+                          onClick={() => {
+                            setWordMode(mode)
+                            setFontWord(null)
+                          }}
+                          className={`flex-1 px-2 py-1.5 transition-colors ${
+                            wordMode === mode ? 'bg-accent/25 text-neutral-100' : 'text-neutral-400 hover:bg-surface-800'
+                          }`}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                   <div className="field-label mb-1">
-                    Clique nas palavras para destacar (brilho pulsante). Some sozinho ao passar pro próximo slide.
+                    {wordMode === 'font' && !selectedSong.blockFx?.[blockIndex]?.phrase
+                      ? 'Clique numa palavra para escolher a fonte dela.'
+                      : 'Clique na palavra para marcar (brilho + efeito) e clique de novo para tirar. Some sozinho ao passar pro próximo slide.'}
                   </div>
                   <div className="flex flex-wrap gap-1.5">
                     {slideWords.map((word, wi) => {
-                      const on = selectedSong.blockFx?.[blockIndex]?.highlights.includes(wi)
+                      const fx = selectedSong.blockFx?.[blockIndex]
+                      const on = fx?.highlights.includes(wi)
+                      const styled = Boolean(fx?.wordStyles?.[wi])
+                      const fontMode = wordMode === 'font' && !fx?.phrase
                       return (
                         <button
                           key={`${wi}-${word}`}
-                          onClick={() => toggleHighlight(wi)}
+                          onClick={() => {
+                            if (fontMode) {
+                              setFontWord(wi === fontWord ? null : wi)
+                            } else if (effectWord === wi || (!on && !fx?.wordEffects?.[wi])) {
+                              // palavra já selecionada: clicar de novo tira a seleção e o que foi aplicado nela;
+                              // palavra sem nada: seleciona e já liga o brilho
+                              if (on || fx?.wordEffects?.[wi]) clearWord(wi)
+                              else {
+                                toggleHighlight(wi)
+                                setEffectWord(wi)
+                              }
+                            } else {
+                              // palavra que já tem efeito/brilho mas não está selecionada: seleciona pra editar
+                              setEffectWord(wi)
+                            }
+                          }}
+                          style={styled ? { fontFamily: fx?.wordStyles?.[wi]?.fontFamily } : undefined}
                           className={`rounded-md border px-2 py-1 text-sm transition-colors ${
-                            on
-                              ? 'border-amber-400 bg-amber-400/20 font-semibold text-amber-200'
-                              : 'border-surface-700 text-neutral-300 hover:bg-surface-800'
+                            (fontMode && fontWord === wi) || (!fontMode && effectWord === wi)
+                              ? 'border-accent bg-accent/20 text-neutral-100 ring-1 ring-accent'
+                              : on
+                                ? 'border-amber-400 bg-amber-400/20 font-semibold text-amber-200'
+                                : styled
+                                  ? 'border-sky-400/60 text-sky-200 hover:bg-surface-800'
+                                  : 'border-surface-700 text-neutral-300 hover:bg-surface-800'
                           }`}
                         >
                           {word}
+                          {fx?.wordEffects?.[wi] && <Icon name="sparkles" size={11} className="ml-1 inline" />}
                         </button>
                       )
                     })}
                   </div>
+                  {wordMode === 'highlight' && !selectedSong.blockFx?.[blockIndex]?.phrase && effectWord !== null && slideWords[effectWord] && (
+                    <div className="mt-2 space-y-2 rounded-md border border-surface-800 bg-surface-950/60 p-2.5">
+                      <div className="flex items-center justify-between">
+                        <div className="field-label">Efeito só de “{slideWords[effectWord]}”</div>
+                        <button
+                          onClick={() => clearWord(effectWord)}
+                          title="Tirar o brilho e o efeito desta palavra"
+                          className="rounded-md border border-red-400/50 px-2 py-0.5 text-[11px] text-red-300 hover:bg-red-400/10"
+                        >
+                          <Icon name="x" size={11} className="mr-1 inline" />Tirar efeito
+                        </button>
+                        <label className="flex items-center gap-1.5 text-[11px] text-neutral-400">
+                          <input
+                            type="checkbox"
+                            checked={selectedSong.blockFx?.[blockIndex]?.highlights.includes(effectWord) ?? false}
+                            onChange={() => toggleHighlight(effectWord)}
+                          />
+                          Brilho pulsante
+                        </label>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <div className="field-label">Cor da palavra</div>
+                        <input
+                          type="color"
+                          value={
+                            selectedSong.blockFx?.[blockIndex]?.wordStyles?.[effectWord]?.color ??
+                            (selectedSong.blockFx?.[blockIndex]?.highlights.includes(effectWord) ? '#ffd54a' : '#ffffff')
+                          }
+                          onChange={(e) => setWordStyle(effectWord, { color: e.target.value })}
+                          className="h-7 w-14 cursor-pointer rounded-md border border-surface-600 bg-surface-800"
+                        />
+                        {selectedSong.blockFx?.[blockIndex]?.wordStyles?.[effectWord]?.color && (
+                          <button
+                            onClick={() => setWordStyle(effectWord, { color: undefined })}
+                            className="rounded-md border border-surface-700 px-2 py-0.5 text-[11px] text-neutral-300 hover:bg-surface-800"
+                          >
+                            Cor padrão
+                          </button>
+                        )}
+                      </div>
+                      <EffectPicker
+                        value={selectedSong.blockFx?.[blockIndex]?.wordEffects?.[effectWord] ?? 'none'}
+                        onChange={(v) => setWordEffect(effectWord, v === 'none' ? null : (v as EffectId))}
+                        onToggleOff={() => clearWord(effectWord)}
+                        leading={[{ value: 'none', label: 'Sem efeito' }]}
+                      />
+                      <div className="text-[11px] leading-snug text-neutral-600">
+                        O efeito toca só nessa palavra, logo depois do slide entrar.
+                      </div>
+                    </div>
+                  )}
+                  {wordMode === 'font' && !selectedSong.blockFx?.[blockIndex]?.phrase && fontWord !== null && slideWords[fontWord] && (
+                    <div className="mt-2 space-y-2 rounded-md border border-surface-800 bg-surface-950/60 p-2.5">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="field-label">Fonte de “{slideWords[fontWord]}”</div>
+                        <button
+                          onClick={() => {
+                            setWordStyle(fontWord, null)
+                            setFontWord(null)
+                          }}
+                          disabled={!selectedSong.blockFx?.[blockIndex]?.wordStyles?.[fontWord]}
+                          title="Tirar a fonte/cor/tamanho desta palavra"
+                          className="rounded-md border border-red-400/50 px-2 py-0.5 text-[11px] text-red-300 hover:bg-red-400/10 disabled:cursor-not-allowed disabled:opacity-40"
+                        >
+                          <Icon name="x" size={11} className="mr-1 inline" />Tirar efeito
+                        </button>
+                      </div>
+                      <FontPicker
+                        value={selectedSong.blockFx?.[blockIndex]?.wordStyles?.[fontWord]?.fontFamily ?? ''}
+                        onChange={(f) => setWordStyle(fontWord, { fontFamily: f || undefined })}
+                        emptyLabel="Igual ao resto do slide"
+                      />
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <div className="field-label mb-1">Tamanho (%)</div>
+                          <input
+                            type="number"
+                            min={40}
+                            max={400}
+                            step={10}
+                            value={Math.round((selectedSong.blockFx?.[blockIndex]?.wordStyles?.[fontWord]?.scale ?? 1) * 100)}
+                            onChange={(e) =>
+                              setWordStyle(fontWord, { scale: Math.min(4, Math.max(0.4, Number(e.target.value) / 100)) })
+                            }
+                            className="field-input"
+                          />
+                        </div>
+                        <div>
+                          <div className="field-label mb-1">Cor</div>
+                          <input
+                            type="color"
+                            value={selectedSong.blockFx?.[blockIndex]?.wordStyles?.[fontWord]?.color ?? '#ffffff'}
+                            onChange={(e) => setWordStyle(fontWord, { color: e.target.value })}
+                            className="h-8 w-full cursor-pointer rounded-md border border-surface-600 bg-surface-800"
+                          />
+                        </div>
+                      </div>
+                      <label className="flex items-center gap-2 text-xs text-neutral-400">
+                        <input
+                          type="checkbox"
+                          checked={selectedSong.blockFx?.[blockIndex]?.wordStyles?.[fontWord]?.italic ?? false}
+                          onChange={(e) => setWordStyle(fontWord, { italic: e.target.checked })}
+                        />
+                        Itálico
+                      </label>
+                      <button
+                        onClick={() => setWordStyle(fontWord, null)}
+                        className="w-full rounded-md border border-surface-700 px-2 py-1 text-xs text-neutral-300 hover:bg-surface-800"
+                      >
+                        Restaurar palavra
+                      </button>
+                    </div>
+                  )}
                 </div>
-              </div>
-            )}
+                </>
+              )}
+            </aside>
+            </div>
             <div className="flex items-center justify-center gap-8 border-t border-surface-800 px-3 py-1.5 text-[11px] text-neutral-600">
               <span>← → trocam de slide</span>
-              <span>Enter ou duplo clique edita · ⌘/Ctrl+Enter salva</span>
+              <span>Enter ou duplo clique edita · ⌘/Ctrl+Enter salva · +Shift salva e cria outro slide</span>
               <span>Esc sai do modo leitura</span>
             </div>
           </>
+        )}
+
+        {composerOpen && selectedSong && (
+          <PhraseComposerModal
+            initialPhrase={selectedSong.blocks[blockIndex]}
+            onClose={() => setComposerOpen(false)}
+            onApply={(layout: PhraseLayout) => updateSlideFx({ phrase: layout }, true)}
+          />
         )}
 
         {onlineSearchOpen && (

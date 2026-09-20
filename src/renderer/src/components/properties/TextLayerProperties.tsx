@@ -1,7 +1,7 @@
 import type { TextLayer } from '@shared/types/project'
 import { useProjectStore } from '../../state/projectStore'
+import { FontPicker } from '../common/FontPicker'
 
-const FONT_OPTIONS = ['Inter', 'Poppins', 'Montserrat', 'Playfair Display', 'Georgia', 'Arial']
 
 export function TextLayerProperties({ layer }: { layer: TextLayer }) {
   const updateTextLayer = useProjectStore((s) => s.updateTextLayer)
@@ -19,17 +19,7 @@ export function TextLayerProperties({ layer }: { layer: TextLayer }) {
       <div className="grid grid-cols-2 gap-2">
         <div>
           <div className="field-label mb-1">Fonte</div>
-          <select
-            value={layer.fontFamily}
-            onChange={(e) => updateTextLayer(layer.id, { fontFamily: e.target.value })}
-            className="field-input"
-          >
-            {FONT_OPTIONS.map((f) => (
-              <option key={f} value={f}>
-                {f}
-              </option>
-            ))}
-          </select>
+          <FontPicker value={layer.fontFamily} onChange={(f) => updateTextLayer(layer.id, { fontFamily: f })} />
         </div>
         <div>
           <div className="field-label mb-1">Tamanho</div>

@@ -1,7 +1,7 @@
 import { promises as fs } from 'node:fs'
 import { app } from 'electron'
 import { join } from 'node:path'
-import type { Song, SongSummary } from '@shared/types/song'
+import type { Playlist, Song, SongSummary } from '@shared/types/song'
 
 function songsDir(): string {
   return join(app.getPath('userData'), 'songs')
@@ -40,4 +40,22 @@ export async function readSong(id: string): Promise<Song> {
 
 export async function deleteSong(id: string): Promise<void> {
   await fs.rm(filePathFor(id), { force: true })
+}
+
+function playlistPath(): string {
+  return join(app.getPath('userData'), 'playlist.json')
+}
+
+export async function readPlaylist(): Promise<Playlist> {
+  try {
+    const raw = await fs.readFile(playlistPath(), 'utf-8')
+    const data = JSON.parse(raw) as Playlist
+    return { entries: Array.isArray(data.entries) ? data.entries : [], currentUid: data.currentUid ?? null }
+  } catch {
+    return { entries: [], currentUid: null }
+  }
+}
+
+export async function savePlaylist(playlist: Playlist): Promise<void> {
+  await fs.writeFile(playlistPath(), JSON.stringify(playlist, null, 2), 'utf-8')
 }

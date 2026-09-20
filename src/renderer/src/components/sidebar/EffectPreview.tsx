@@ -8,6 +8,9 @@ const PAUSE = 0.5 // pausa em branco antes de repetir o ciclo
 function applyOverlay(el: HTMLElement, overlay: EffectOverlay): void {
   el.style.opacity = String(overlay.opacity)
   el.style.filter = overlay.blur > 0 ? `blur(${overlay.blur}px)` : 'none'
+  el.style.clipPath = overlay.clipPath ?? 'none'
+  el.style.color = overlay.color ?? ''
+  el.style.textShadow = overlay.textShadow ?? 'none'
   el.style.transform = `translate(${overlay.x}px, ${overlay.y}px) scale(${overlay.scale}) rotate(${overlay.rotation}deg)`
 }
 

@@ -42,7 +42,7 @@ export type KeyframeTracks = {
   [K in AnimatablePropKey]?: Keyframe<AnimatableProps[K]>[]
 }
 
-export type LayerType = 'text' | 'background'
+export type LayerType = 'text' | 'background' | 'shape' | 'media'
 
 /** Um trecho de tempo em que o layer aparece na cena. Cortar um clipe divide um
  * segmento em dois dentro do MESMO layer — nunca cria um layer novo. */
@@ -90,6 +90,7 @@ export type EffectId =
   | 'chars-arc-overshoot'
   | 'chars-tumble'
   | 'chars-tumble-scale'
+  | 'write'
 
 export interface TextLayer extends BaseLayer {
   type: 'text'
@@ -115,7 +116,41 @@ export interface BackgroundLayer extends BaseLayer {
   fill: BackgroundFill
 }
 
-export type Layer = TextLayer | BackgroundLayer
+export type ShapeKind = 'rect' | 'torn'
+
+/** Forma sólida (retângulo ou tira "rasgada" tipo papel) pra colocar atrás do texto. */
+export interface ShapeLayer extends BaseLayer {
+  type: 'shape'
+  kind: ShapeKind
+  color: string
+  /** Tamanho em px do canvas lógico (1280×720). */
+  width: number
+  height: number
+  effect?: EffectId
+}
+
+export type BlendMode =
+  | 'normal'
+  | 'multiply'
+  | 'screen'
+  | 'overlay'
+  | 'soft-light'
+  | 'lighten'
+  | 'darken'
+  | 'color-dodge'
+
+/** Imagem ou vídeo importado — serve de fundo (cover) ou de textura por cima (com blend). */
+export interface MediaLayer extends BaseLayer {
+  type: 'media'
+  mediaKind: 'image' | 'video'
+  filePath: string
+  fileName: string
+  fit: 'cover' | 'contain'
+  blendMode: BlendMode
+  effect?: EffectId
+}
+
+export type Layer = TextLayer | BackgroundLayer | ShapeLayer | MediaLayer
 
 /** Áudio importado (MP3/WAV) associado a uma cena, para sincronizar a letra com a música. */
 export interface SceneAudio {

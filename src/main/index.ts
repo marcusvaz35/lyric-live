@@ -1,4 +1,6 @@
-import { app, shell, screen, BrowserWindow, Menu } from 'electron'
+import { app, shell, screen, BrowserWindow, protocol, net } from 'electron'
+import { pathToFileURL } from 'node:url'
+import { basename } from 'node:path'
 import { join } from 'node:path'
 import { is } from './lib/env'
 import { IPC, type DisplayInfo, type LiveOverlayPayload, type LiveStatePayload } from '@shared/types/ipc'
@@ -7,9 +9,14 @@ import { registerMediaHandlers } from './ipc/mediaHandlers'
 import { registerLiveHandlers, type LiveWindowController } from './ipc/liveHandlers'
 import { registerBibleHandlers } from './ipc/bibleHandlers'
 import { registerSongHandlers } from './ipc/songHandlers'
+import { registerTranscribeHandlers } from './ipc/transcribeHandlers'
+import { buildAppMenu } from './menu'
+import { registerFontHandlers } from './ipc/fontHandlers'
 import { JsonProjectRepository } from './persistence/jsonProjectRepository'
+import { mediaDirectory } from './persistence/mediaLibrary'
 
 let liveWindow: BrowserWindow | null = null
+let mainWindow: BrowserWindow | null = null
 let lastOverlay: LiveOverlayPayload | null = null
 
 // empacotado, o ícone já vem do instalador; o png só existe no projeto em dev
@@ -32,6 +39,10 @@ function createMainWindow(): void {
     }
   })
 
+  mainWindow = win
+  win.on('closed', () => {
+    mainWindow = null
+  })
   win.on('ready-to-show', () => win.show())
 
   if (is.dev) {
@@ -59,18 +70,45 @@ function createLiveWindow(): void {
     return
   }
 
-  liveWindow = new BrowserWindow({
-    width: 960,
-    height: 540,
-    show: false,
-    backgroundColor: '#000000',
-    frame: false,
-    fullscreenable: true,
-    webPreferences: {
-      preload: join(__dirname, '../preload/index.mjs'),
-      sandbox: false
-    }
-  })
+  // Com segundo monitor (projetor/telão) plugado, a janela vai sozinha pra ele em tela cheia.
+  // Só com uma tela: abre em 1920×1080 (encolhe mantendo 16:9 se a tela for menor).
+  const primaryId = screen.getPrimaryDisplay().id
+  const external = screen.getAllDisplays().find((d) => d.id !== primaryId)
+
+  if (external) {
+    liveWindow = new BrowserWindow({
+      x: external.bounds.x,
+      y: external.bounds.y,
+      width: external.bounds.width,
+      height: external.bounds.height,
+      show: false,
+      backgroundColor: '#000000',
+      frame: false,
+      fullscreenable: true,
+      webPreferences: {
+        preload: join(__dirname, '../preload/index.mjs'),
+        sandbox: false
+      }
+    })
+    liveWindow.once('ready-to-show', () => liveWindow?.setFullScreen(true))
+  } else {
+    const work = screen.getPrimaryDisplay().workAreaSize
+    const fit = Math.min(1, work.width / 1920, work.height / 1080)
+    liveWindow = new BrowserWindow({
+      width: Math.round(1920 * fit),
+      height: Math.round(1080 * fit),
+      useContentSize: true,
+      center: true,
+      show: false,
+      backgroundColor: '#000000',
+      frame: false,
+      fullscreenable: true,
+      webPreferences: {
+        preload: join(__dirname, '../preload/index.mjs'),
+        sandbox: false
+      }
+    })
+  }
 
   liveWindow.on('ready-to-show', () => liveWindow?.show())
   liveWindow.webContents.on('did-finish-load', () => {
@@ -119,8 +157,19 @@ const liveController: LiveWindowController = {
 
 app.setName('Lyric Live')
 
+// lyricmedia://media/<arquivo>: serve imagens/vídeos da pasta de mídia do app com
+// streaming (dá pra buscar/loop em vídeo grande sem carregar tudo em memória).
+protocol.registerSchemesAsPrivileged([
+  { scheme: 'lyricmedia', privileges: { standard: true, secure: true, stream: true, supportFetchAPI: true } }
+])
+
 app.whenReady().then(() => {
-  Menu.setApplicationMenu(null)
+  buildAppMenu(() => mainWindow)
+
+  protocol.handle('lyricmedia', (request) => {
+    const name = basename(decodeURIComponent(new URL(request.url).pathname))
+    return net.fetch(pathToFileURL(join(mediaDirectory(), name)).toString(), { headers: request.headers })
+  })
 
   if (process.platform === 'darwin' && !app.isPackaged) {
     app.dock?.setIcon(iconPath)
@@ -131,6 +180,8 @@ app.whenReady().then(() => {
   registerLiveHandlers(liveController)
   registerBibleHandlers()
   registerSongHandlers()
+  registerTranscribeHandlers()
+  registerFontHandlers()
 
   createMainWindow()
 

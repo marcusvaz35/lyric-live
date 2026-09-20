@@ -6,6 +6,7 @@ import { TimelineKeyframeTrack } from './TimelineKeyframeTrack'
 import { TimelineRuler } from './TimelineRuler'
 import { TimelineAudioGutterRow, TimelineAudioWaveform, AUDIO_ROW_HEIGHT } from './TimelineAudioTrack'
 import { useSceneAudioController } from './useSceneAudioController'
+import { Icon, type IconName } from '../common/Icon'
 
 const DEFAULT_PPS = 90 // pixels por segundo
 const MIN_PPS = 15
@@ -16,9 +17,9 @@ const ROW_HEIGHT = 36
 
 export type TimelineTool = 'select' | 'erase'
 
-const TOOLS: { id: TimelineTool; icon: string; label: string }[] = [
-  { id: 'select', icon: '🖱️', label: 'Mouse (selecionar e mover playhead)' },
-  { id: 'erase', icon: '🗑️', label: 'Apagar (clique num clipe para excluir)' }
+const TOOLS: { id: TimelineTool; icon: IconName; label: string }[] = [
+  { id: 'select', icon: 'pointer', label: 'Mouse (selecionar e mover playhead)' },
+  { id: 'erase', icon: 'trash', label: 'Apagar (clique num clipe para excluir)' }
 ]
 
 export function Timeline() {
@@ -101,10 +102,10 @@ export function Timeline() {
           className="flex h-7 w-7 items-center justify-center rounded-full bg-accent text-white hover:bg-accent-hover"
           title="Espaço"
         >
-          {isPlaying ? '⏸' : '▶'}
+          <Icon name={isPlaying ? 'pause' : 'play'} size={14} />
         </button>
         <button className="icon-btn" title="Ir para o início" onClick={() => setPlayhead(0)}>
-          ⏮
+          <Icon name="skip-back" size={15} />
         </button>
 
         <div className="h-5 w-px bg-surface-700" />
@@ -121,7 +122,7 @@ export function Timeline() {
                   : 'text-neutral-400 hover:bg-surface-700 hover:text-neutral-100'
               }`}
             >
-              {t.icon}
+              <Icon name={t.icon} size={15} />
             </button>
           ))}
           <button
@@ -129,7 +130,7 @@ export function Timeline() {
             title="Corte (corta no playhead atual; não fica selecionado, funciona só no clique)"
             className="flex h-7 w-7 items-center justify-center rounded-md text-sm text-neutral-400 transition-colors hover:bg-surface-700 hover:text-neutral-100"
           >
-            ✂️
+            <Icon name="scissors" size={15} />
           </button>
         </div>
 

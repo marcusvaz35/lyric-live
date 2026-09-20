@@ -1,6 +1,9 @@
 import type { CSSProperties } from 'react'
 import type { AnimatableProps, ClipSegment, Layer } from '@shared/types/project'
+import { useEffect, useRef } from 'react'
 import { useProjectStore } from '../../state/projectStore'
+import { mediaUrl } from '../../lib/mediaUrl'
+import { tornPolygon } from '../../lib/shapes'
 import { computeEffectPhase, getEffect, IDENTITY_OVERLAY, type EffectOverlay } from '../../lib/effects'
 
 interface Props {
@@ -39,6 +42,61 @@ export function LayerRenderer({ layer, transform, selected, playhead, segment }:
         className={`absolute inset-0 ${selected ? 'outline outline-2 outline-accent -outline-offset-2' : ''}`}
         style={style}
       />
+    )
+  }
+
+  if (layer.type === 'shape' || layer.type === 'media') {
+    const fx = getEffect(layer.effect)
+    const fxPhase = fx ? computeEffectPhase(playhead, segment.start, segment.duration, fx.duration) : 1
+    const ov: EffectOverlay = fx?.mode === 'block' && fx.overlay ? fx.overlay(fxPhase) : IDENTITY_OVERLAY
+    const opacity = transform.opacity * ov.opacity
+    const blur = transform.blur + ov.blur
+    const common: CSSProperties = {
+      opacity,
+      filter: blur > 0 ? `blur(${blur}px)` : undefined,
+      clipPath: ov.clipPath
+    }
+    const motion = `translate(${transform.position.x + ov.x}px, ${transform.position.y + ov.y}px) scale(${
+      transform.scale * ov.scale
+    }) rotate(${transform.rotation + ov.rotation}deg)`
+
+    if (layer.type === 'shape') {
+      return (
+        <div
+          onMouseDown={handleSelect}
+          className={`absolute ${selected ? 'outline outline-2 outline-accent' : ''}`}
+          style={{
+            left: '50%',
+            top: '50%',
+            width: layer.width,
+            height: layer.height,
+            backgroundColor: layer.color,
+            ...common,
+            clipPath: layer.kind === 'torn' ? tornPolygon(layer.id) : common.clipPath,
+            transform: `translate(-50%, -50%) ${motion}`
+          }}
+        />
+      )
+    }
+
+    const src = mediaUrl(layer.filePath)
+    const mediaStyle: CSSProperties = {
+      ...common,
+      mixBlendMode: layer.blendMode,
+      objectFit: layer.fit,
+      transform: motion
+    }
+    return (
+      <div
+        onMouseDown={handleSelect}
+        className={`absolute inset-0 ${selected ? 'outline outline-2 outline-accent -outline-offset-2' : ''}`}
+      >
+        {layer.mediaKind === 'video' ? (
+          <SyncedVideo src={src} time={playhead - segment.start} style={mediaStyle} />
+        ) : (
+          <img src={src} alt="" draggable={false} className="h-full w-full" style={mediaStyle} />
+        )}
+      </div>
     )
   }
 
@@ -82,6 +140,9 @@ export function LayerRenderer({ layer, transform, selected, playhead, segment }:
             display: 'inline-block',
             opacity: overlay.opacity,
             filter: overlay.blur > 0 ? `blur(${overlay.blur}px)` : undefined,
+            clipPath: overlay.clipPath,
+            color: overlay.color,
+            textShadow: overlay.textShadow,
             transform: `translate(${overlay.x}px, ${overlay.y}px) scale(${overlay.scale}) rotate(${overlay.rotation}deg)`
           }
           return (
@@ -119,4 +180,30 @@ export function LayerRenderer({ layer, transform, selected, playhead, segment }:
       {layer.text}
     </div>
   )
+}
+
+/** Vídeo que segue o playhead: procura o quadro certo e só toca enquanto o tempo anda. */
+function SyncedVideo({ src, time, style }: { src: string; time: number; style: CSSProperties }) {
+  const ref = useRef<HTMLVideoElement>(null)
+  const idle = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => {
+    const video = ref.current
+    if (!video) return
+    const duration = Number.isFinite(video.duration) && video.duration > 0 ? video.duration : null
+    const target = duration ? ((time % duration) + duration) % duration : Math.max(0, time)
+    if (Math.abs(video.currentTime - target) > 0.3) video.currentTime = target
+    video.play().catch(() => {})
+    if (idle.current) clearTimeout(idle.current)
+    idle.current = setTimeout(() => video.pause(), 250)
+  }, [time])
+
+  useEffect(
+    () => () => {
+      if (idle.current) clearTimeout(idle.current)
+    },
+    []
+  )
+
+  return <video ref={ref} src={src} muted loop playsInline preload="auto" className="h-full w-full" style={style} />
 }
