@@ -49,6 +49,9 @@ export function PhraseComposerModal({
   const [stagger, setStagger] = useState(0.25)
   const [overrides, setOverrides] = useState<Record<number, WordOverride>>({})
   const [selectedWord, setSelectedWord] = useState<number | null>(null)
+  /** Palavras que a pessoa arrastou com o mouse: só elas ficam paradas quando o tamanho
+   * da letra da música muda (as outras se reorganizam em linhas). */
+  const [movedWords, setMovedWords] = useState<Record<number, true>>({})
   /** Muda pra refazer a animação da prévia (ao trocar efeito/estilo/atraso ou no botão). */
   const [previewKey, setPreviewKey] = useState(0)
 
@@ -201,6 +204,12 @@ export function PhraseComposerModal({
     setOverrides((o) => ({ ...o, [selectedWord]: { ...o[selectedWord], ...patch } }))
   }
 
+  /** Marca quais palavras foram postas no lugar à mão, pro layout saber o que não reorganizar. */
+  const markMoved = (layout: PhraseLayout): PhraseLayout => ({
+    ...layout,
+    items: layout.items.map((it, i) => (movedWords[i] ? { ...it, moved: true } : it))
+  })
+
   const handleApplyAll = (): void => {
     if (!onApplyAll) return
     const build = (text: string): PhraseLayout =>
@@ -218,13 +227,13 @@ export function PhraseComposerModal({
         }),
         0
       )
-    onApplyAll(build, toPhraseLayout(layers, 0))
+    onApplyAll(build, markMoved(toPhraseLayout(layers, 0)))
     onClose()
   }
 
   const handleCreate = (): void => {
     if (onApply) {
-      onApply(toPhraseLayout(layers, 0), effect || null)
+      onApply(markMoved(toPhraseLayout(layers, 0)), effect || null)
       onClose()
       return
     }
@@ -265,6 +274,7 @@ export function PhraseComposerModal({
                       record()
                       setPresetId(p.id)
                       setOverrides({})
+                      setMovedWords({})
                     }}
                     className={`block w-full rounded-md border px-3 py-2 text-left transition-colors ${
                       presetId === p.id ? 'border-accent bg-accent/10' : 'border-surface-700 hover:bg-surface-800'
@@ -296,7 +306,10 @@ export function PhraseComposerModal({
                   record()
                   freezeLayout()
                 }}
-                onEditItem={(i, edit) => setOverrides((o) => ({ ...o, [i]: { ...o[i], ...edit } }))}
+                onEditItem={(i, edit) => {
+                  if (edit.moved) setMovedWords((m) => ({ ...m, [i]: true }))
+                  setOverrides((o) => ({ ...o, [i]: { ...o[i], ...edit } }))
+                }}
               />
             </div>
             <div className="flex items-center justify-between text-[11px] text-neutral-500">

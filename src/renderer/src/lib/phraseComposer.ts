@@ -31,6 +31,8 @@ export interface WordOverride {
   y?: number
   /** Efeito só desta palavra: undefined = o da frase, 'none' = sem efeito. */
   effect?: EffectId | 'none'
+  /** Posição escolhida à mão (não entra na reorganização ao mudar o tamanho da letra). */
+  moved?: boolean
 }
 
 export interface ComposeParams {
@@ -220,6 +222,78 @@ export function composePhrase(params: ComposeParams): Layer[] {
   })
 
   return layers
+}
+
+/** Refaz a frase noutro tamanho: as fontes crescem/diminuem e as palavras são redistribuídas
+ * em linhas que cabem no palco — igual o texto simples se reorganiza ao mudar de tamanho.
+ * Palavras que a pessoa posicionou à mão continuam onde estavam, só acompanhando a escala. */
+export function rescalePhrase(layout: PhraseLayout, zoom: number): PhraseLayout {
+  if (!Number.isFinite(zoom) || zoom === 1 || layout.items.length === 0) return layout
+
+  const items = layout.items.map((it) => ({
+    ...it,
+    fontSize: it.fontSize * zoom,
+    letterSpacing: it.letterSpacing * zoom
+  }))
+  const widths = items.map((it) =>
+    measureWidth(it.text, {
+      fontFamily: it.fontFamily,
+      fontSize: it.fontSize,
+      fontWeight: it.fontWeight,
+      italic: it.italic,
+      color: it.color,
+      letterSpacing: it.letterSpacing,
+      rotation: it.rotation,
+      upper: false
+    })
+  )
+
+  const MAX_ROW = 1000
+  const GAP = 26 * zoom
+  const rows: number[][] = []
+  let rowWidth = 0
+  for (let i = 0; i < items.length; i++) {
+    const needed = widths[i] + (rows.length && rowWidth ? GAP : 0)
+    if (rows.length === 0 || (rowWidth + needed > MAX_ROW && rows[rows.length - 1].length > 0)) {
+      rows.push([i])
+      rowWidth = widths[i]
+    } else {
+      rows[rows.length - 1].push(i)
+      rowWidth += needed
+    }
+  }
+
+  const rowHeights = rows.map((r) => Math.max(...r.map((i) => items[i].fontSize)) * 1.02)
+  const totalHeight = rowHeights.reduce((a, b) => a + b, 0)
+  let cursorY = -totalHeight / 2
+  let maxRowWidth = 0
+
+  rows.forEach((row, ri) => {
+    const rowW = row.reduce((sum, i, k) => sum + widths[i] + (k ? GAP : 0), 0)
+    maxRowWidth = Math.max(maxRowWidth, rowW)
+    let x = -rowW / 2
+    const y = cursorY + rowHeights[ri] / 2
+    for (const i of row) {
+      items[i] = { ...items[i], x: Math.round(x + widths[i] / 2), y: Math.round(y) }
+      x += widths[i] + GAP
+    }
+    cursorY += rowHeights[ri]
+  })
+
+  // quem foi arrastado à mão mantém o lugar, só acompanhando a escala
+  layout.items.forEach((original, i) => {
+    if (original.moved) items[i] = { ...items[i], x: Math.round(original.x * zoom), y: Math.round(original.y * zoom) }
+  })
+
+  const strip = layout.strip
+    ? {
+        ...layout.strip,
+        width: Math.round(Math.min(1240, maxRowWidth + 160 * zoom)),
+        height: Math.round(totalHeight + 70 * zoom)
+      }
+    : undefined
+
+  return { items, strip }
 }
 
 /** Converte as camadas geradas em um layout independente da timeline (pra exibir ao vivo). */

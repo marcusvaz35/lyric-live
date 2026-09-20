@@ -16,6 +16,8 @@ export interface PhraseItem {
   /** Atraso da entrada desta palavra, em segundos (efeito cascata). */
   delay: number
   effect: EffectId | null
+  /** Palavra colocada no lugar pela pessoa: ao mudar o tamanho da letra ela não é reorganizada. */
+  moved?: boolean
 }
 
 export interface PhraseStrip {

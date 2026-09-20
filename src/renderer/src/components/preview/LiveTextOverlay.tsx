@@ -1,10 +1,11 @@
-import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react'
 import type { LiveOverlayPayload } from '@shared/types/ipc'
 import type { PhraseLayout } from '@shared/types/phrase'
 import type { WordFontStyle } from '@shared/types/song'
 import type { EffectId } from '@shared/types/project'
 import { getEffect, IDENTITY_OVERLAY, type EffectOverlay } from '../../lib/effects'
 import { tornPolygon } from '../../lib/shapes'
+import { rescalePhrase } from '../../lib/phraseComposer'
 import { ScaledStage } from './ScaledStage'
 
 const HIGHLIGHT_COLOR = '#ffd54a'
@@ -273,6 +274,8 @@ export interface ItemEdit {
   y?: number
   fontSize?: number
   rotation?: number
+  /** Marca que a palavra foi posta no lugar à mão (não reorganiza ao mudar o tamanho da letra). */
+  moved?: boolean
 }
 
 const HANDLE = 12
@@ -308,11 +311,14 @@ export function PhraseStage({
   /** Duplo clique numa palavra abre a digitação; devolve o novo texto ao confirmar. */
   onEditText?: (index: number, text: string) => void
 }) {
-  const end = Math.max(0.5, ...phrase.items.map((it) => it.delay + (getEffect(it.effect ?? undefined)?.duration ?? 0))) + 0.1
+  // mudar o tamanho da letra refaz o layout (linhas e posições), em vez de só esticar o bloco
+  const view = useMemo(() => rescalePhrase(phrase, zoom), [phrase, zoom])
+  const end = Math.max(0.5, ...view.items.map((it) => it.delay + (getEffect(it.effect ?? undefined)?.duration ?? 0))) + 0.1
   const t = useElapsed(replayKey, end)
   const rootRef = useRef<HTMLDivElement>(null)
   const [scale, setScale] = useState(1)
-  const uiScale = scale * zoom
+  // as palavras já vêm no tamanho certo do layout; as alças só acompanham a escala do palco
+  const uiScale = scale
   const editable = Boolean(onEditItem)
   const [editingText, setEditingText] = useState<{ index: number; draft: string } | null>(null)
   const lastDown = useRef<{ index: number; time: number }>({ index: -1, time: 0 })
@@ -362,7 +368,7 @@ export function PhraseStage({
   }
 
   const beginMove = (e: ReactPointerEvent, i: number): void => {
-    const item = phrase.items[i]
+    const item = view.items[i]
     onSelectItem?.(i)
     if (!editable) return
     // duplo clique (dois cliques rápidos na mesma palavra) abre a digitação do texto
@@ -379,26 +385,27 @@ export function PhraseStage({
     const startY = e.clientY
     startGesture(e, e.currentTarget as HTMLElement, (ev) => {
       onEditItem?.(i, {
-        x: Math.round(item.x + (ev.clientX - startX) / uiScale),
-        y: Math.round(item.y + (ev.clientY - startY) / uiScale)
+        x: Math.round((item.x + (ev.clientX - startX) / uiScale) / zoom),
+        y: Math.round((item.y + (ev.clientY - startY) / uiScale) / zoom),
+        moved: true
       })
     })
   }
 
   const beginScale = (e: ReactPointerEvent, i: number, itemEl: HTMLElement): void => {
-    const item = phrase.items[i]
+    const item = view.items[i]
     const rect = itemEl.getBoundingClientRect()
     const cx = rect.left + rect.width / 2
     const cy = rect.top + rect.height / 2
     const startDist = Math.hypot(e.clientX - cx, e.clientY - cy) || 1
     startGesture(e, itemEl, (ev) => {
       const dist = Math.hypot(ev.clientX - cx, ev.clientY - cy)
-      onEditItem?.(i, { fontSize: Math.round(Math.min(700, Math.max(12, (item.fontSize * dist) / startDist))) })
+      onEditItem?.(i, { fontSize: Math.round(Math.min(700, Math.max(12, (item.fontSize * dist) / startDist)) / zoom) })
     })
   }
 
   const beginRotate = (e: ReactPointerEvent, i: number, itemEl: HTMLElement): void => {
-    const item = phrase.items[i]
+    const item = view.items[i]
     const rect = itemEl.getBoundingClientRect()
     const cx = rect.left + rect.width / 2
     const cy = rect.top + rect.height / 2
@@ -424,22 +431,21 @@ export function PhraseStage({
   return (
     <div ref={rootRef} className="absolute inset-0 bg-black" onPointerDown={editable ? () => onSelectItem?.(null) : undefined}>
       <ScaledStage>
-        <div style={{ position: 'absolute', inset: 0, transform: `scale(${zoom})`, transformOrigin: 'center' }}>
-        {phrase.strip && (
+        {view.strip && (
           <div
             style={{
               position: 'absolute',
               left: '50%',
               top: '50%',
-              width: phrase.strip.width,
-              height: phrase.strip.height,
-              backgroundColor: phrase.strip.color,
-              ...motion(stripOverlay, 0, 0, phrase.strip.rotation),
-              clipPath: tornPolygon(phrase.strip.seed)
+              width: view.strip.width,
+              height: view.strip.height,
+              backgroundColor: view.strip.color,
+              ...motion(stripOverlay, 0, 0, view.strip.rotation),
+              clipPath: tornPolygon(view.strip.seed)
             }}
           />
         )}
-        {phrase.items.map((item, i) => {
+        {view.items.map((item, i) => {
           const fx = getEffect(item.effect ?? undefined)
           const phase = fx ? clamp01((t - item.delay) / fx.duration) : t >= item.delay ? 1 : 0
           const blockOv: EffectOverlay = fx?.mode === 'block' && fx.overlay ? fx.overlay(phase) : IDENTITY_OVERLAY
@@ -563,7 +569,6 @@ export function PhraseStage({
             </div>
           )
         })}
-        </div>
       </ScaledStage>
     </div>
   )
