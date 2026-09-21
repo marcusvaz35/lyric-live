@@ -5,10 +5,10 @@ import type { BibleBook, BibleVersionMeta } from '@shared/types/bible'
 
 /**
  * Fontes: thiagobodruk/biblia (github.com/thiagobodruk/biblia, CC BY-NC) pra
- * ACF/AA/NVI, e damarals/biblias (github.com/damarals/biblias, MIT) pra ARC —
+ * ACF/AA/NVI, e damarals/biblias (github.com/damarals/biblias, MIT) pra ARC e NAA —
  * mesmo formato de JSON nos dois. Os textos em si pertencem às respectivas
  * sociedades bíblicas — ACF e AA são de uso livre corrente para fins
- * ministeriais; ARC e NVI têm direitos reservados às suas editoras, então
+ * ministeriais; ARC, NAA e NVI têm direitos reservados às suas editoras, então
  * ficam disponíveis mas com aviso explícito antes de baixar.
  */
 const CATALOG: Omit<BibleVersionMeta, 'downloaded'>[] = [
@@ -33,9 +33,8 @@ const CATALOG: Omit<BibleVersionMeta, 'downloaded'>[] = [
   {
     id: 'naa',
     label: 'Nova Almeida Atualizada (NAA)',
-    license:
-      'Texto com direitos reservados à Sociedade Bíblica do Brasil. O programa não baixa esse texto: importe um arquivo da NAA que você tenha licença para usar (mesmo formato das outras versões).',
-    importOnly: true
+    license: 'Direitos reservados à Sociedade Bíblica do Brasil — confirme a licença antes de usar comercialmente.',
+    source: 'https://github.com/damarals/biblias/releases/latest/download/NAA.json'
   },
   {
     id: 'nvi',
