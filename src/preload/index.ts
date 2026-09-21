@@ -72,6 +72,7 @@ const api = {
     list: (): Promise<string[]> => ipcRenderer.invoke(IPC.fontsList)
   },
   app: {
+    version: (): Promise<string> => ipcRenderer.invoke(IPC.appVersion),
     onCommand: (callback: (command: AppCommand) => void): (() => void) => {
       const listener = (_event: Electron.IpcRendererEvent, command: AppCommand): void => callback(command)
       ipcRenderer.on(IPC.appCommand, listener)

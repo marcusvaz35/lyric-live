@@ -47,8 +47,17 @@ export function UpdateNotice() {
           setPhase('idle')
           setHidden(false)
         } else {
-          setMessage(error ? `Não consegui verificar: ${error}` : 'Você já está na versão mais recente.')
-          setTimeout(() => setMessage(null), 4000)
+          api.app
+            .version()
+            .catch(() => '')
+            .then((current) => {
+              setMessage(
+                error
+                  ? `Não consegui verificar: ${error}`
+                  : `Você está na versão ${current} e ela é a mais recente.`
+              )
+              setTimeout(() => setMessage(null), 4000)
+            })
         }
       })
     })

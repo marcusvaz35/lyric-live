@@ -12,7 +12,12 @@ const MOD = IS_MAC ? '⌘' : 'Ctrl+'
 
 export function TopMenuBar() {
   const [projectMenuOpen, setProjectMenuOpen] = useState(false)
+  const [appVersion, setAppVersion] = useState('')
   const menuRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    window.api?.app.version().then(setAppVersion).catch(() => {})
+  }, [])
   const project = useProjectStore((s) => s.project)
   const dirty = useProjectStore((s) => s.dirty)
   const filePath = useProjectStore((s) => s.filePath)
@@ -31,6 +36,7 @@ export function TopMenuBar() {
       <span className="mr-3 flex shrink-0 items-center gap-1.5 whitespace-nowrap font-semibold tracking-tight text-neutral-100">
         <img src={logoMark} alt="" className="h-5 w-5 shrink-0 rounded-[5px]" />
         Lyric Live
+        {appVersion && <span className="text-[11px] font-normal text-neutral-500">v{appVersion}</span>}
       </span>
 
       <div className="relative" ref={menuRef}>

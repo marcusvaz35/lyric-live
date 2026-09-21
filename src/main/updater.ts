@@ -116,6 +116,7 @@ async function installUpdate(): Promise<void> {
 }
 
 export function registerUpdateHandlers(getMainWindow: () => BrowserWindow | null): void {
+  ipcMain.handle(IPC.appVersion, () => app.getVersion())
   ipcMain.handle(IPC.updateCheck, () => checkForUpdate())
   ipcMain.handle(IPC.updateDownload, () => downloadUpdate(getMainWindow()))
   ipcMain.handle(IPC.updateInstall, () => installUpdate())

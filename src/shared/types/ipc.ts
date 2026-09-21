@@ -39,6 +39,7 @@ export const IPC = {
   playlistGet: 'playlist:get',
   playlistSave: 'playlist:save',
   appCommand: 'app:command',
+  appVersion: 'app:version',
   fontsList: 'fonts:list',
   transcribeRun: 'transcribe:run',
   transcribeProgress: 'transcribe:progress',
