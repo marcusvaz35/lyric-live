@@ -4,6 +4,7 @@ import type { Playlist, Song, SongSummary, SlideFx, WordFontStyle } from '@share
 import type { EffectId } from '@shared/types/project'
 import { splitIntoBlocks } from '../../lib/songBlocks'
 import { SongSearchOnlineModal } from './SongSearchOnlineModal'
+import { HolyricsImportModal } from './HolyricsImportModal'
 import { LiveToggleButton } from '../common/LiveToggleButton'
 import { PhraseComposerModal } from '../preview/PhraseComposerModal'
 import { LiveTextOverlay, PhraseStage, type ItemEdit } from '../preview/LiveTextOverlay'
@@ -47,6 +48,7 @@ export function SongBrowserModal({ open, onClose }: { open: boolean; onClose: ()
   const [draft, setDraft] = useState<DraftSong>(EMPTY_DRAFT)
   const [saving, setSaving] = useState(false)
   const [onlineSearchOpen, setOnlineSearchOpen] = useState(false)
+  const [holyricsImportOpen, setHolyricsImportOpen] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
   const [composerOpen, setComposerOpen] = useState(false)
   /** O clique numa palavra do slide destaca (brilho) ou seleciona pra trocar a fonte dela. */
@@ -157,6 +159,7 @@ export function SongBrowserModal({ open, onClose }: { open: boolean; onClose: ()
       setMode('list')
       setSelectedSong(null)
       setOnlineSearchOpen(false)
+      setHolyricsImportOpen(false)
       window.api?.live.pushOverlay(null)
     }
   }, [open])
@@ -630,6 +633,7 @@ export function SongBrowserModal({ open, onClose }: { open: boolean; onClose: ()
       if (e.key === 'Escape') {
         e.preventDefault()
         if (onlineSearchOpen) setOnlineSearchOpen(false)
+        else if (holyricsImportOpen) setHolyricsImportOpen(false)
         else if (mode === 'reading') blankLive()
         else if (mode === 'create') setMode('list')
         else onClose()
@@ -639,7 +643,7 @@ export function SongBrowserModal({ open, onClose }: { open: boolean; onClose: ()
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, mode, onlineSearchOpen, blockIndex, selectedSong, onClose, editingIndex, editText, editIsNew, composerOpen, manualFx])
+  }, [open, mode, onlineSearchOpen, holyricsImportOpen, blockIndex, selectedSong, onClose, editingIndex, editText, editIsNew, composerOpen, manualFx])
 
   songRef.current = selectedSong
 
@@ -676,6 +680,12 @@ export function SongBrowserModal({ open, onClose }: { open: boolean; onClose: ()
                   placeholder="Pesquisar na sua biblioteca..."
                   className="field-input flex-1"
                 />
+                <button
+                  onClick={() => setHolyricsImportOpen(true)}
+                  className="rounded-md border border-surface-700 px-3 py-1.5 text-sm text-neutral-300 hover:bg-surface-800"
+                >
+                  Importar do Holyrics
+                </button>
                 <button
                   onClick={() => setOnlineSearchOpen(true)}
                   className="rounded-md border border-surface-700 px-3 py-1.5 text-sm text-neutral-300 hover:bg-surface-800"
@@ -1598,6 +1608,13 @@ export function SongBrowserModal({ open, onClose }: { open: boolean; onClose: ()
             onClose={() => setComposerOpen(false)}
             onApply={(layout: PhraseLayout) => updateSlideFx({ phrase: layout }, true)}
             onApplyAll={applyPhraseToAll}
+          />
+        )}
+
+        {holyricsImportOpen && (
+          <HolyricsImportModal
+            onCancel={() => setHolyricsImportOpen(false)}
+            onImported={refreshSongs}
           />
         )}
 

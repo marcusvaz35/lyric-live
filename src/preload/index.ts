@@ -14,6 +14,7 @@ import {
 import type { Project } from '@shared/types/project'
 import type { BibleBook, BibleVersionMeta } from '@shared/types/bible'
 import type { Playlist, Song, SongSearchResult, SongSummary } from '@shared/types/song'
+import type { HolyricsImportSongsResult, HolyricsSettings, HolyricsSongSummary } from '@shared/types/holyrics'
 import type { TranscribedSegment, TranscribeProgress } from '@shared/types/transcribe'
 
 const api = {
@@ -100,6 +101,17 @@ const api = {
       ipcRenderer.on(IPC.transcribeProgress, listener)
       return () => ipcRenderer.removeListener(IPC.transcribeProgress, listener)
     }
+  },
+  holyrics: {
+    getSettings: (): Promise<HolyricsSettings | null> => ipcRenderer.invoke(IPC.holyricsGetSettings),
+    saveSettings: (settings: HolyricsSettings): Promise<void> =>
+      ipcRenderer.invoke(IPC.holyricsSaveSettings, settings),
+    testConnection: (settings: HolyricsSettings): Promise<void> =>
+      ipcRenderer.invoke(IPC.holyricsTestConnection, settings),
+    listSongs: (settings: HolyricsSettings): Promise<HolyricsSongSummary[]> =>
+      ipcRenderer.invoke(IPC.holyricsListSongs, settings),
+    importSongs: (settings: HolyricsSettings, ids: string[]): Promise<HolyricsImportSongsResult> =>
+      ipcRenderer.invoke(IPC.holyricsImportSongs, settings, ids)
   },
   playlist: {
     get: (): Promise<Playlist> => ipcRenderer.invoke(IPC.playlistGet),
