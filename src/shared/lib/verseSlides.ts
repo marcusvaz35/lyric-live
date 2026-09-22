@@ -1,4 +1,4 @@
-const MAX_CHARS_PER_LINE = 45
+export const MAX_CHARS_PER_LINE = 45
 
 /** Quebra um texto em linhas de até `maxChars`, cortando só nos espaços (nunca no meio de uma palavra). */
 function wrapLines(text: string, maxChars: number): string[] {

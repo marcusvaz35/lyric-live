@@ -1,11 +1,25 @@
 import { useEffect, useRef, useState } from 'react'
 import type { BibleBook, BibleVersionMeta } from '@shared/types/bible'
 import { parseQuickLocate } from '../../lib/bibleSearch'
-import { splitVerseIntoSlides } from '@shared/lib/verseSlides'
+import { MAX_CHARS_PER_LINE, splitVerseIntoSlides } from '@shared/lib/verseSlides'
 import { categoryColorForIndex } from './bookCategories'
 import { QuickLocatePopup } from './QuickLocatePopup'
 import { LiveToggleButton } from '../common/LiveToggleButton'
 import { Icon } from '../common/Icon'
+
+const FONT_KEY = 'lyriclive.bibleFontPct'
+const FONT_MIN = 50
+const FONT_MAX = 200
+
+function readSavedFontPct(): number {
+  try {
+    const saved = Number(localStorage.getItem(FONT_KEY))
+    if (saved >= FONT_MIN && saved <= FONT_MAX) return saved
+  } catch {
+    /* sem armazenamento: usa o padrão */
+  }
+  return 100
+}
 
 export function BibleBrowserModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [versions, setVersions] = useState<BibleVersionMeta[] | null>(null)
@@ -27,6 +41,12 @@ export function BibleBrowserModal({ open, onClose }: { open: boolean; onClose: (
   const [readingVerseIndex, setReadingVerseIndex] = useState(0)
   /** Versículos longos viram vários slides (2 linhas cada); este é o slide atual dentro do versículo. */
   const [slideIndex, setSlideIndex] = useState(0)
+  /** Tamanho da letra no telão (50–200%), lembrado entre as aberturas. */
+  const [fontPct, setFontPct] = useState(readSavedFontPct)
+
+  /** Letra maior cabe menos texto por linha (e o contrário), então o versículo é refeito em slides de 2 linhas. */
+  const slidesFor = (text: string, pct = fontPct): string[] =>
+    splitVerseIntoSlides(text, Math.max(15, Math.round(MAX_CHARS_PER_LINE / (pct / 100))))
 
   useEffect(() => {
     if (!open || !window.api) return
@@ -58,12 +78,38 @@ export function BibleBrowserModal({ open, onClose }: { open: boolean; onClose: (
   /** Manda um trecho (slide) do versículo pro overlay da janela LIVE — não mexe na cena/timeline
    * do projeto. Versículos longos viram vários slides de até 2 linhas; a referência exibida ao
    * vivo é sempre só "Livro Cap:Vers", sem contador (isso fica só na tela do editor). */
-  const showVerseOnScreen = (book: BibleBook, ch: number, verseIndex: number, slideIdx: number): void => {
+  const showVerseOnScreen = (
+    book: BibleBook,
+    ch: number,
+    verseIndex: number,
+    slideIdx: number,
+    pct = fontPct
+  ): void => {
     const text = book.chapters[ch - 1]?.[verseIndex]
     if (text === undefined) return
-    const slides = splitVerseIntoSlides(text)
+    const slides = slidesFor(text, pct)
     const slide = slides[Math.min(slideIdx, slides.length - 1)] ?? text
-    window.api?.live.pushOverlay({ text: slide, reference: `${book.name} ${ch}:${verseIndex + 1}` })
+    window.api?.live.pushOverlay({
+      text: slide,
+      reference: `${book.name} ${ch}:${verseIndex + 1}`,
+      fontScale: pct / 100
+    })
+  }
+
+  /** Diminui/aumenta a letra: atualiza o telão na hora, recomeçando o versículo atual pelo primeiro slide. */
+  const changeFontPct = (next: number): void => {
+    const value = Math.min(FONT_MAX, Math.max(FONT_MIN, Math.round(next)))
+    if (value === fontPct) return
+    setFontPct(value)
+    try {
+      localStorage.setItem(FONT_KEY, String(value))
+    } catch {
+      /* sem armazenamento: só não lembra na próxima vez */
+    }
+    if (reading && books) {
+      setSlideIndex(0)
+      showVerseOnScreen(books[bookIndex], chapter, readingVerseIndex, 0, value)
+    }
   }
 
   const exitReadingMode = (): void => {
@@ -84,7 +130,7 @@ export function BibleBrowserModal({ open, onClose }: { open: boolean; onClose: (
   const stepVerse = (direction: 1 | -1): void => {
     if (!books) return
     const book = books[bookIndex]
-    const currentSlideCount = splitVerseIntoSlides(book.chapters[chapter - 1][readingVerseIndex]).length
+    const currentSlideCount = slidesFor(book.chapters[chapter - 1][readingVerseIndex]).length
 
     // ainda tem mais slide dentro do mesmo versículo: só anda de slide, sem trocar de versículo
     if (direction === 1 && slideIndex < currentSlideCount - 1) {
@@ -127,7 +173,7 @@ export function BibleBrowserModal({ open, onClose }: { open: boolean; onClose: (
     }
 
     // voltando pra um versículo anterior, entra pelo último slide dele (não pelo primeiro)
-    const sIdx = direction === -1 ? splitVerseIntoSlides(books[bIdx].chapters[ch - 1][vIdx]).length - 1 : 0
+    const sIdx = direction === -1 ? slidesFor(books[bIdx].chapters[ch - 1][vIdx]).length - 1 : 0
 
     setBookIndex(bIdx)
     setChapter(ch)
@@ -215,7 +261,7 @@ export function BibleBrowserModal({ open, onClose }: { open: boolean; onClose: (
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, quickBuffer, books, onClose, reading, bookIndex, chapter, readingVerseIndex, slideIndex])
+  }, [open, quickBuffer, books, onClose, reading, bookIndex, chapter, readingVerseIndex, slideIndex, fontPct])
 
   useEffect(() => {
     if (locatedVerse === null) return
@@ -257,7 +303,7 @@ export function BibleBrowserModal({ open, onClose }: { open: boolean; onClose: (
   const currentBook = books?.[bookIndex] ?? null
   const chapterCount = currentBook?.chapters.length ?? 0
   const verses = currentBook?.chapters[chapter - 1] ?? []
-  const readingSlides = reading && verses[readingVerseIndex] !== undefined ? splitVerseIntoSlides(verses[readingVerseIndex]) : ['']
+  const readingSlides = reading && verses[readingVerseIndex] !== undefined ? slidesFor(verses[readingVerseIndex]) : ['']
   const quickState = books && quickBuffer !== null ? parseQuickLocate(books, quickBuffer) : null
 
   const handleSelectBook = (index: number): void => {
@@ -275,6 +321,31 @@ export function BibleBrowserModal({ open, onClose }: { open: boolean; onClose: (
             {reading && <span className="rounded bg-accent/20 px-1.5 py-0.5 text-[10px] text-accent">AO VIVO</span>}
           </div>
           <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1" title="Tamanho da letra no telão">
+              <button
+                onClick={() => changeFontPct(fontPct - 10)}
+                disabled={fontPct <= FONT_MIN}
+                title="Diminuir a letra"
+                className="rounded-md border border-surface-700 px-2.5 py-1 text-sm text-neutral-200 hover:bg-surface-800 disabled:opacity-40"
+              >
+                A−
+              </button>
+              <button
+                onClick={() => changeFontPct(100)}
+                title="Voltar ao tamanho padrão"
+                className="w-12 rounded-md px-1 py-1 text-center text-xs text-neutral-300 hover:bg-surface-800"
+              >
+                {fontPct}%
+              </button>
+              <button
+                onClick={() => changeFontPct(fontPct + 10)}
+                disabled={fontPct >= FONT_MAX}
+                title="Aumentar a letra"
+                className="rounded-md border border-surface-700 px-2.5 py-1 text-sm text-neutral-200 hover:bg-surface-800 disabled:opacity-40"
+              >
+                A+
+              </button>
+            </div>
             <select
               value={versionId}
               onChange={(e) => setVersionId(e.target.value)}
