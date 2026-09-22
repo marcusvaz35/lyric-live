@@ -9,6 +9,9 @@ import { Icon } from '../common/Icon'
 import { LiveTextOverlay } from '../preview/LiveTextOverlay'
 
 const FONT_KEY = 'lyriclive.bibleFontPct'
+const UPPER_KEY = 'lyriclive.bibleUpper'
+/** Maiúsculas ocupam mais largura que minúsculas: cabem menos letras por linha. */
+const UPPER_WIDTH_FACTOR = 1.2
 const FONT_MIN = 50
 const FONT_MAX = 200
 
@@ -20,6 +23,14 @@ function readSavedFontPct(): number {
     /* sem armazenamento: usa o padrão */
   }
   return 100
+}
+
+function readSavedUpper(): boolean {
+  try {
+    return localStorage.getItem(UPPER_KEY) === '1'
+  } catch {
+    return false
+  }
 }
 
 export function BibleBrowserModal({ open, onClose }: { open: boolean; onClose: () => void }) {
@@ -44,10 +55,15 @@ export function BibleBrowserModal({ open, onClose }: { open: boolean; onClose: (
   const [slideIndex, setSlideIndex] = useState(0)
   /** Tamanho da letra no telão (50–200%), lembrado entre as aberturas. */
   const [fontPct, setFontPct] = useState(readSavedFontPct)
+  /** Letras todas maiúsculas no telão (só no texto do versículo). */
+  const [upper, setUpper] = useState(readSavedUpper)
 
   /** Letra maior cabe menos texto por linha (e o contrário), então o versículo é refeito em slides de 2 linhas. */
-  const slidesFor = (text: string, pct = fontPct): string[] =>
-    splitVerseIntoSlides(text, Math.max(12, Math.round(MAX_CHARS_PER_LINE / (pct / 100))))
+  const slidesFor = (text: string, pct = fontPct, up = upper): string[] => {
+    const width = Math.max(12, Math.round(MAX_CHARS_PER_LINE / (pct / 100) / (up ? UPPER_WIDTH_FACTOR : 1)))
+    const slides = splitVerseIntoSlides(text, width)
+    return up ? slides.map((slide) => slide.toLocaleUpperCase('pt-BR')) : slides
+  }
 
   useEffect(() => {
     if (!open || !window.api) return
@@ -84,17 +100,32 @@ export function BibleBrowserModal({ open, onClose }: { open: boolean; onClose: (
     ch: number,
     verseIndex: number,
     slideIdx: number,
-    pct = fontPct
+    pct = fontPct,
+    up = upper
   ): void => {
     const text = book.chapters[ch - 1]?.[verseIndex]
     if (text === undefined) return
-    const slides = slidesFor(text, pct)
+    const slides = slidesFor(text, pct, up)
     const slide = slides[Math.min(slideIdx, slides.length - 1)] ?? text
     window.api?.live.pushOverlay({
       text: slide,
       reference: `${book.name} ${ch}:${verseIndex + 1}`,
       fontScale: pct / 100
     })
+  }
+
+  /** Liga/desliga as letras maiúsculas: refaz os trechos (maiúscula ocupa mais) e atualiza o telão. */
+  const changeUpper = (next: boolean): void => {
+    setUpper(next)
+    try {
+      localStorage.setItem(UPPER_KEY, next ? '1' : '0')
+    } catch {
+      /* sem armazenamento: só não lembra na próxima vez */
+    }
+    if (reading && books) {
+      setSlideIndex(0)
+      showVerseOnScreen(books[bookIndex], chapter, readingVerseIndex, 0, fontPct, next)
+    }
   }
 
   /** Diminui/aumenta a letra: atualiza o telão na hora, recomeçando o versículo atual pelo primeiro slide. */
@@ -269,7 +300,7 @@ export function BibleBrowserModal({ open, onClose }: { open: boolean; onClose: (
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, quickBuffer, books, onClose, reading, bookIndex, chapter, readingVerseIndex, slideIndex, fontPct])
+  }, [open, quickBuffer, books, onClose, reading, bookIndex, chapter, readingVerseIndex, slideIndex, fontPct, upper])
 
   useEffect(() => {
     if (locatedVerse === null) return
@@ -354,6 +385,15 @@ export function BibleBrowserModal({ open, onClose }: { open: boolean; onClose: (
                 A+
               </button>
             </div>
+            <button
+              onClick={() => changeUpper(!upper)}
+              title={upper ? 'Voltar para maiúsculas e minúsculas' : 'Deixar todas as letras maiúsculas'}
+              className={`rounded-md border px-2.5 py-1 text-sm hover:bg-surface-800 ${
+                upper ? 'border-accent bg-accent/15 text-neutral-100' : 'border-surface-700 text-neutral-200'
+              }`}
+            >
+              AA
+            </button>
             <select
               value={versionId}
               onChange={(e) => setVersionId(e.target.value)}
