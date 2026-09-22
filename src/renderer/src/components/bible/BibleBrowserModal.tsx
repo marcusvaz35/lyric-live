@@ -47,7 +47,7 @@ export function BibleBrowserModal({ open, onClose }: { open: boolean; onClose: (
 
   /** Letra maior cabe menos texto por linha (e o contrário), então o versículo é refeito em slides de 2 linhas. */
   const slidesFor = (text: string, pct = fontPct): string[] =>
-    splitVerseIntoSlides(text, Math.max(15, Math.round(MAX_CHARS_PER_LINE / (pct / 100))))
+    splitVerseIntoSlides(text, Math.max(12, Math.round(MAX_CHARS_PER_LINE / (pct / 100))))
 
   useEffect(() => {
     if (!open || !window.api) return
