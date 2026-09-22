@@ -50,6 +50,9 @@ export function SongBrowserModal({ open, onClose }: { open: boolean; onClose: ()
   const [onlineSearchOpen, setOnlineSearchOpen] = useState(false)
   const [holyricsImportOpen, setHolyricsImportOpen] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
+  /** Modo de seleção da biblioteca: marca várias músicas pra excluir de uma vez. */
+  const [selectMode, setSelectMode] = useState(false)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [composerOpen, setComposerOpen] = useState(false)
   /** O clique numa palavra do slide destaca (brilho) ou seleciona pra trocar a fonte dela. */
   const [wordMode, setWordMode] = useState<'highlight' | 'font'>('highlight')
@@ -562,6 +565,45 @@ export function SongBrowserModal({ open, onClose }: { open: boolean; onClose: ()
     refreshSongs()
   }
 
+  const toggleSelectMode = (): void => {
+    setSelectMode((v) => !v)
+    setSelectedIds(new Set())
+  }
+
+  const toggleSelected = (id: string): void => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  const allFilteredSelected = filteredSongs.length > 0 && filteredSongs.every((s) => selectedIds.has(s.id))
+
+  /** Marca (ou desmarca) todas as músicas que aparecem na lista com a pesquisa atual. */
+  const toggleSelectAll = (): void => {
+    setSelectedIds(allFilteredSelected ? new Set() : new Set(filteredSongs.map((s) => s.id)))
+  }
+
+  const handleDeleteSelected = async (): Promise<void> => {
+    if (!window.api || selectedIds.size === 0) return
+    const ids = [...selectedIds]
+    const label = ids.length === 1 ? '1 música' : `${ids.length} músicas`
+    if (!window.confirm(`Excluir ${label} da biblioteca? Isso não pode ser desfeito.`)) return
+    const api = window.api
+    await Promise.all(ids.map((id) => api.song.delete(id)))
+    const gone = new Set(ids)
+    const currentSongId = playlist.entries.find((en) => en.uid === playlist.currentUid)?.songId
+    updatePlaylist({
+      entries: playlist.entries.filter((en) => !gone.has(en.songId)),
+      currentUid: currentSongId && gone.has(currentSongId) ? null : playlist.currentUid
+    })
+    setSelectedIds(new Set())
+    setSelectMode(false)
+    refreshSongs()
+  }
+
   const handleSaveDraft = async (): Promise<void> => {
     if (!window.api || !draft.title.trim() || !draft.lyrics.trim()) return
     setSaving(true)
@@ -693,6 +735,14 @@ export function SongBrowserModal({ open, onClose }: { open: boolean; onClose: ()
                   Pesquisar na internet
                 </button>
                 <button
+                  onClick={toggleSelectMode}
+                  className={`rounded-md border px-3 py-1.5 text-sm hover:bg-surface-800 ${
+                    selectMode ? 'border-accent text-neutral-100' : 'border-surface-700 text-neutral-300'
+                  }`}
+                >
+                  {selectMode ? 'Cancelar seleção' : 'Selecionar'}
+                </button>
+                <button
                   onClick={() => {
                     setDraft(EMPTY_DRAFT)
                     setNotice(null)
@@ -703,6 +753,27 @@ export function SongBrowserModal({ open, onClose }: { open: boolean; onClose: ()
                   + Nova música
                 </button>
               </div>
+
+              {selectMode && (
+                <div className="flex items-center gap-3 border-b border-surface-800 bg-surface-850 px-4 py-2 text-sm">
+                  <button onClick={toggleSelectAll} className="text-neutral-300 hover:text-neutral-100">
+                    {allFilteredSelected ? 'Desmarcar todas' : 'Selecionar todas'}
+                  </button>
+                  <span className="text-neutral-500">
+                    {selectedIds.size === 0
+                      ? 'Marque as músicas que quer excluir'
+                      : `${selectedIds.size} ${selectedIds.size === 1 ? 'selecionada' : 'selecionadas'}`}
+                  </span>
+                  <button
+                    onClick={handleDeleteSelected}
+                    disabled={selectedIds.size === 0}
+                    className="ml-auto flex items-center gap-1.5 rounded-md bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-500 disabled:opacity-40"
+                  >
+                    <Icon name="trash" size={14} />
+                    Excluir selecionadas
+                  </button>
+                </div>
+              )}
 
               <div className="flex-1 overflow-y-scroll p-2">
                 {!songs ? (
@@ -717,7 +788,7 @@ export function SongBrowserModal({ open, onClose }: { open: boolean; onClose: ()
                   filteredSongs.map((s) => (
                     <div
                       key={s.id}
-                      draggable
+                      draggable={!selectMode}
                       onDragStart={(e) => {
                         e.dataTransfer.effectAllowed = 'copyMove'
                         e.dataTransfer.setData('text/plain', s.id)
@@ -728,15 +799,31 @@ export function SongBrowserModal({ open, onClose }: { open: boolean; onClose: ()
                         setPlDropAt(null)
                         setPlOver(false)
                       }}
-                      title="Arraste para a playlist do culto"
-                      className={`group flex w-full cursor-grab items-center gap-1 rounded-md pr-2 hover:bg-surface-800 ${
+                      title={selectMode ? undefined : 'Arraste para a playlist do culto'}
+                      className={`group flex w-full items-center gap-1 rounded-md pr-2 hover:bg-surface-800 ${
+                        selectMode ? 'cursor-pointer' : 'cursor-grab'
+                      } ${selectMode && selectedIds.has(s.id) ? 'bg-surface-800' : ''} ${
                         libDrag === s.id ? 'opacity-50' : ''
                       }`}
                     >
-                      <button onClick={() => openReading(s.id)} className="min-w-0 flex-1 px-3 py-2.5 text-left">
+                      {selectMode && (
+                        <input
+                          type="checkbox"
+                          checked={selectedIds.has(s.id)}
+                          onChange={() => toggleSelected(s.id)}
+                          className="ml-3 h-4 w-4 shrink-0 cursor-pointer accent-[var(--accent,#6366f1)]"
+                          aria-label={`Selecionar ${s.title}`}
+                        />
+                      )}
+                      <button
+                        onClick={() => (selectMode ? toggleSelected(s.id) : openReading(s.id))}
+                        className="min-w-0 flex-1 px-3 py-2.5 text-left"
+                      >
                         <div className="truncate text-sm text-neutral-100">{s.title}</div>
                         <div className="truncate text-xs text-neutral-500">{s.artist}</div>
                       </button>
+                      {!selectMode && (
+                      <>
                       <button
                         onClick={() => addToPlaylist(s.id)}
                         title="Adicionar à playlist do culto"
@@ -752,6 +839,8 @@ export function SongBrowserModal({ open, onClose }: { open: boolean; onClose: ()
                       >
                         <Icon name="trash" size={14} />
                       </button>
+                      </>
+                      )}
                     </div>
                   ))
                 )}

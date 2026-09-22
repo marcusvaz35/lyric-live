@@ -6,6 +6,7 @@ import { categoryColorForIndex } from './bookCategories'
 import { QuickLocatePopup } from './QuickLocatePopup'
 import { LiveToggleButton } from '../common/LiveToggleButton'
 import { Icon } from '../common/Icon'
+import { LiveTextOverlay } from '../preview/LiveTextOverlay'
 
 const FONT_KEY = 'lyriclive.bibleFontPct'
 const FONT_MIN = 50
@@ -110,6 +111,13 @@ export function BibleBrowserModal({ open, onClose }: { open: boolean; onClose: (
       setSlideIndex(0)
       showVerseOnScreen(books[bookIndex], chapter, readingVerseIndex, 0, value)
     }
+  }
+
+  /** Pula direto pra um trecho (slide de 2 linhas) do versículo que está no ar. */
+  const goToSlide = (idx: number): void => {
+    if (!books) return
+    setSlideIndex(idx)
+    showVerseOnScreen(books[bookIndex], chapter, readingVerseIndex, idx)
   }
 
   const exitReadingMode = (): void => {
@@ -396,8 +404,8 @@ export function BibleBrowserModal({ open, onClose }: { open: boolean; onClose: (
             Carregando textos…
           </div>
         ) : reading ? (
-          <div className="flex flex-1 flex-col items-center justify-center gap-8 p-12 text-center">
-            <div className="text-2xl font-semibold text-accent">
+          <div className="flex flex-1 flex-col items-center justify-center gap-4 overflow-y-auto p-6 text-center">
+            <div className="text-xl font-semibold text-accent">
               {currentBook?.name} {chapter}:{readingVerseIndex + 1}
               {readingSlides.length > 1 && (
                 <span className="ml-2 text-sm font-normal text-neutral-500">
@@ -405,8 +413,42 @@ export function BibleBrowserModal({ open, onClose }: { open: boolean; onClose: (
                 </span>
               )}
             </div>
-            <div className="max-w-5xl whitespace-pre-line text-5xl font-semibold leading-tight text-white">
-              {readingSlides[slideIndex]}
+            <div className="w-full max-w-3xl">
+              <div className="field-label mb-1 text-left">Prévia do que está no LIVE</div>
+              <div
+                className="relative w-full overflow-hidden rounded-md border border-surface-700 bg-black"
+                style={{ aspectRatio: '16 / 9', containerType: 'inline-size' }}
+              >
+                <LiveTextOverlay
+                  embedded
+                  overlay={{
+                    text: readingSlides[slideIndex] ?? '',
+                    reference: `${currentBook?.name ?? ''} ${chapter}:${readingVerseIndex + 1}`,
+                    fontScale: fontPct / 100
+                  }}
+                />
+              </div>
+            </div>
+            {readingSlides.length > 1 && (
+              <div className="grid w-full max-w-3xl grid-cols-2 gap-2 text-left">
+                {readingSlides.map((slide, i) => (
+                  <button
+                    key={i}
+                    onClick={() => goToSlide(i)}
+                    className={`whitespace-pre-line rounded-md border px-3 py-2 text-xs leading-snug ${
+                      i === slideIndex
+                        ? 'border-accent bg-accent/15 text-neutral-100'
+                        : 'border-surface-700 text-neutral-400 hover:bg-surface-800'
+                    }`}
+                  >
+                    <span className="mb-0.5 block text-[10px] text-neutral-500">Trecho {i + 1}</span>
+                    {slide}
+                  </button>
+                ))}
+              </div>
+            )}
+            <div className="text-[11px] text-neutral-600">
+              Use as setas ← → para avançar ou voltar. Cada trecho tem até 2 linhas.
             </div>
           </div>
         ) : (
