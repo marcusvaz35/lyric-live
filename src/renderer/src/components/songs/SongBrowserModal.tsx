@@ -89,6 +89,9 @@ export function SongBrowserModal({ open, onClose }: { open: boolean; onClose: ()
   const blockRefs = useRef<(HTMLDivElement | null)[]>([])
   const [editingIndex, setEditingIndex] = useState<number | null>(null)
   const [editText, setEditText] = useState('')
+  /** Editar a letra toda de uma vez (como no Holyrics): cada linha em branco vira um slide novo. */
+  const [editingFullLyrics, setEditingFullLyrics] = useState(false)
+  const [fullLyricsText, setFullLyricsText] = useState('')
   const [editIsNew, setEditIsNew] = useState(false)
   /** Arrastar slide pra reordenar: quem está sendo arrastado e o vão (0..n) onde vai cair. */
   const [dragIndex, setDragIndex] = useState<number | null>(null)
@@ -421,6 +424,28 @@ export function SongBrowserModal({ open, onClose }: { open: boolean; onClose: ()
     pushBlock(updated, nextIndex)
   }
 
+  const startEditFullLyrics = (): void => {
+    if (!selectedSong) return
+    setFullLyricsText(selectedSong.blocks.join('\n\n'))
+    setEditingFullLyrics(true)
+  }
+
+  /** Redivide a letra toda pelas linhas em branco (2 linhas por slide, como a criação de música)
+   * e substitui os slides. Efeitos e destaques dos slides antigos se perdem — a letra mudou de estrutura. */
+  const commitFullLyrics = async (): Promise<void> => {
+    if (!selectedSong) return
+    const newBlocks = splitIntoBlocks(fullLyricsText)
+    setEditingFullLyrics(false)
+    if (newBlocks.length === 0) return
+    const updated = await persistBlocks(
+      selectedSong,
+      newBlocks,
+      newBlocks.map(() => null)
+    )
+    setBlockIndex(0)
+    pushBlock(updated, 0)
+  }
+
   const addBlock = (): void => {
     if (!selectedSong) return
     const at = blockIndex + 1
@@ -637,6 +662,17 @@ export function SongBrowserModal({ open, onClose }: { open: boolean; onClose: ()
     if (!open) return
 
     const onKeyDown = (e: KeyboardEvent): void => {
+      if (editingFullLyrics) {
+        if (e.key === 'Escape') {
+          e.preventDefault()
+          setEditingFullLyrics(false)
+        } else if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+          e.preventDefault()
+          commitFullLyrics()
+        }
+        return
+      }
+
       if (editingIndex !== null) {
         if (e.key === 'Escape') {
           e.preventDefault()
@@ -685,7 +721,7 @@ export function SongBrowserModal({ open, onClose }: { open: boolean; onClose: ()
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, mode, onlineSearchOpen, holyricsImportOpen, blockIndex, selectedSong, onClose, editingIndex, editText, editIsNew, composerOpen, manualFx])
+  }, [open, mode, onlineSearchOpen, holyricsImportOpen, blockIndex, selectedSong, onClose, editingIndex, editText, editIsNew, composerOpen, manualFx, editingFullLyrics, fullLyricsText])
 
   songRef.current = selectedSong
 
@@ -1085,6 +1121,13 @@ export function SongBrowserModal({ open, onClose }: { open: boolean; onClose: ()
                   className="rounded-md bg-accent px-2.5 py-1 text-xs font-medium text-white hover:bg-accent-hover"
                 >
                   + Frase
+                </button>
+                <button
+                  onClick={startEditFullLyrics}
+                  title="Cole a letra toda: cada linha em branco separa um slide novo"
+                  className="rounded-md border border-surface-700 px-2 py-1 text-neutral-300 hover:bg-surface-800"
+                >
+                  Editar letra completa
                 </button>
                 <button
                   onClick={addBlock}
@@ -1689,6 +1732,37 @@ export function SongBrowserModal({ open, onClose }: { open: boolean; onClose: ()
               <span>Esc apaga o telão</span>
             </div>
           </>
+        )}
+
+        {editingFullLyrics && selectedSong && (
+          <div className="absolute inset-0 z-10 flex flex-col gap-3 bg-surface-900 p-5">
+            <div className="field-label">
+              Letra completa de {selectedSong.title} — separe os slides com uma linha em branco (cada
+              slide mostra 2 linhas por vez)
+            </div>
+            <textarea
+              value={fullLyricsText}
+              onChange={(e) => setFullLyricsText(e.target.value)}
+              autoFocus
+              className="field-input min-h-[220px] flex-1 resize-none font-mono text-sm leading-relaxed"
+              placeholder={'Primeira estrofe...\n\nSegunda estrofe...'}
+            />
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setEditingFullLyrics(false)}
+                className="rounded-md px-3 py-1.5 text-sm text-neutral-400 hover:bg-surface-800"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={commitFullLyrics}
+                disabled={!fullLyricsText.trim()}
+                className="rounded-md bg-accent px-4 py-1.5 text-sm font-medium text-white hover:bg-accent-hover disabled:opacity-40"
+              >
+                Salvar (⌘/Ctrl+Enter)
+              </button>
+            </div>
+          </div>
         )}
 
         {composerOpen && selectedSong && (
