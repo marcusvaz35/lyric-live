@@ -241,11 +241,11 @@ export function LiveTextOverlay({
       </p>
       {overlay.reference && (
         <p
-          className="font-semibold tracking-wide text-white/85"
+          className="font-semibold tracking-wide text-white"
           style={{
             // acompanha o tamanho da letra do versículo e fica em branco: roxo pequeno some no projetor
             fontFamily: overlay.fontFamily || undefined,
-            fontSize: embedded ? `calc(2.4cqw * ${fontScale})` : `calc(clamp(18px, 2.4vw, 52px) * ${fontScale})`,
+            fontSize: embedded ? `calc(3.2cqw * ${fontScale})` : `calc(clamp(22px, 3.2vw, 68px) * ${fontScale})`,
             textShadow: '0 2px 12px rgba(0, 0, 0, 0.6)'
           }}
         >
