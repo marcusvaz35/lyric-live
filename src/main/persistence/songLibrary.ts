@@ -1,7 +1,8 @@
 import { promises as fs } from 'node:fs'
 import { app } from 'electron'
 import { join } from 'node:path'
-import type { Playlist, Song, SongSummary } from '@shared/types/song'
+import type { Playlist, PlaylistEntry, Song, SongSummary } from '@shared/types/song'
+import { appendVerses } from './verseList'
 
 function songsDir(): string {
   return join(app.getPath('userData'), 'songs')
@@ -51,11 +52,36 @@ function playlistPath(): string {
   return join(app.getPath('userData'), 'playlist.json')
 }
 
+/** Entrada como ficava salva na versão em que versículo e música dividiam a mesma lista. */
+interface LegacyEntry {
+  uid: string
+  songId?: string
+  verse?: { reference: string; text: string }
+}
+
 export async function readPlaylist(): Promise<Playlist> {
   try {
     const raw = await fs.readFile(playlistPath(), 'utf-8')
-    const data = JSON.parse(raw) as Playlist
-    return { entries: Array.isArray(data.entries) ? data.entries : [], currentUid: data.currentUid ?? null }
+    const data = JSON.parse(raw) as { entries?: LegacyEntry[]; currentUid?: string | null }
+    const saved = Array.isArray(data.entries) ? data.entries : []
+
+    // versículos que tinham sido guardados junto das músicas mudam pra lista própria da Bíblia
+    const strays = saved.filter((e) => e?.verse)
+    const songs = saved.filter((e): e is PlaylistEntry => Boolean(e?.songId) && !e.verse)
+    if (strays.length > 0) {
+      await appendVerses(
+        strays.map((e) => ({ uid: e.uid, reference: e.verse!.reference, text: e.verse!.text }))
+      )
+      const movedUids = new Set(strays.map((e) => e.uid))
+      const cleaned: Playlist = {
+        entries: songs,
+        currentUid: data.currentUid && movedUids.has(data.currentUid) ? null : (data.currentUid ?? null)
+      }
+      await savePlaylist(cleaned)
+      return cleaned
+    }
+
+    return { entries: songs, currentUid: data.currentUid ?? null }
   } catch {
     return { entries: [], currentUid: null }
   }

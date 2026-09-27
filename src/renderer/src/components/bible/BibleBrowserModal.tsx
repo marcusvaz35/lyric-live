@@ -9,7 +9,7 @@ import { Icon } from '../common/Icon'
 import { LiveTextOverlay } from '../preview/LiveTextOverlay'
 import { FontPicker } from '../common/FontPicker'
 import { nanoid } from 'nanoid'
-import type { Playlist, PlaylistEntry, SongSummary } from '@shared/types/song'
+import type { VerseList, VerseListEntry } from '@shared/types/song'
 
 const FONT_KEY = 'lyriclive.bibleFontPct'
 const UPPER_KEY = 'lyriclive.bibleUpper'
@@ -82,10 +82,9 @@ export function BibleBrowserModal({ open, onClose }: { open: boolean; onClose: (
   const [fontFamily, setFontFamily] = useState(readSavedFont)
   /** Referência recém-guardada no culto (só pra confirmar na tela por uns segundos). */
   const [addedToPlaylist, setAddedToPlaylist] = useState<string | null>(null)
-  /** Lista do culto (músicas e versículos-chave) e se o painel dela está aberto. */
-  const [playlist, setPlaylist] = useState<Playlist>({ entries: [], currentUid: null })
-  const [showPlaylist, setShowPlaylist] = useState(false)
-  const [songs, setSongs] = useState<SongSummary[]>([])
+  /** Versículos guardados pro culto (lista só da Bíblia) e se o painel dela está aberto. */
+  const [verseList, setVerseList] = useState<VerseList>({ entries: [] })
+  const [showVerseList, setShowVerseList] = useState(false)
   /** Letras todas maiúsculas no telão (só no texto do versículo). */
   const [upper, setUpper] = useState(readSavedUpper)
 
@@ -98,8 +97,7 @@ export function BibleBrowserModal({ open, onClose }: { open: boolean; onClose: (
 
   useEffect(() => {
     if (!open || !window.api) return
-    window.api.playlist.get().then(setPlaylist)
-    window.api.song.list().then(setSongs)
+    window.api.verses.get().then(setVerseList)
     window.api.bible.listVersions().then(setVersions)
   }, [open])
 
@@ -150,41 +148,33 @@ export function BibleBrowserModal({ open, onClose }: { open: boolean; onClose: (
     })
   }
 
-  /** Guarda o versículo atual como versículo-chave na lista do culto (junto das músicas). */
+  /** Guarda o versículo atual na lista de versículos do culto (separada das músicas). */
   const addVerseToPlaylist = async (): Promise<void> => {
     const book = books?.[bookIndex]
     const text = book?.chapters[chapter - 1]?.[readingVerseIndex]
     if (!book || text === undefined || !window.api) return
     const reference = `${book.name} ${chapter}:${readingVerseIndex + 1}`
-    const current = await window.api.playlist.get()
-    const next: Playlist = {
-      ...current,
-      entries: [...current.entries, { uid: nanoid(), verse: { reference, text } }]
-    }
-    await window.api.playlist.save(next)
-    setPlaylist(next)
-    setShowPlaylist(true)
+    const current = await window.api.verses.get()
+    const next: VerseList = { entries: [...current.entries, { uid: nanoid(), reference, text }] }
+    await window.api.verses.save(next)
+    setVerseList(next)
+    setShowVerseList(true)
     setAddedToPlaylist(reference)
     window.setTimeout(() => setAddedToPlaylist(null), 2200)
   }
 
-  /** Tira uma entrada do culto (serve pra música e pra versículo). */
-  const removeFromPlaylist = async (uid: string): Promise<void> => {
-    const next: Playlist = {
-      entries: playlist.entries.filter((e) => e.uid !== uid),
-      currentUid: playlist.currentUid === uid ? null : playlist.currentUid
-    }
-    setPlaylist(next)
-    await window.api?.playlist.save(next)
+  const removeSavedVerse = async (uid: string): Promise<void> => {
+    const next: VerseList = { entries: verseList.entries.filter((e) => e.uid !== uid) }
+    setVerseList(next)
+    await window.api?.verses.save(next)
   }
 
-  /** Manda um versículo-chave guardado direto pro telão, já dividido em trechos. */
-  const showSavedVerse = (entry: PlaylistEntry, slide = 0): void => {
-    if (!entry.verse) return
-    const slides = slidesFor(entry.verse.text)
+  /** Manda um versículo guardado direto pro telão, já dividido em trechos. */
+  const showSavedVerse = (entry: VerseListEntry, slide = 0): void => {
+    const slides = slidesFor(entry.text)
     window.api?.live.pushOverlay({
-      text: slides[Math.min(slide, slides.length - 1)] ?? entry.verse.text,
-      reference: showRef ? entry.verse.reference : '',
+      text: slides[Math.min(slide, slides.length - 1)] ?? entry.text,
+      reference: showRef ? entry.reference : '',
       fontScale: fontPct / 100,
       fontFamily: fontFamily || undefined
     })
@@ -503,16 +493,16 @@ export function BibleBrowserModal({ open, onClose }: { open: boolean; onClose: (
               </button>
             )}
             <button
-              onClick={() => setShowPlaylist(!showPlaylist)}
-              title="Ver a lista do culto (músicas e versículos guardados)"
+              onClick={() => setShowVerseList(!showVerseList)}
+              title="Ver os versículos guardados pro culto"
               className={`rounded-md border px-2.5 py-1 text-sm hover:bg-surface-800 ${
-                showPlaylist ? 'border-accent bg-accent/15 text-neutral-100' : 'border-surface-700 text-neutral-200'
+                showVerseList ? 'border-accent bg-accent/15 text-neutral-100' : 'border-surface-700 text-neutral-200'
               }`}
             >
-              Culto
-              {playlist.entries.length > 0 && (
+              Versículos
+              {verseList.entries.length > 0 && (
                 <span className="ml-1.5 rounded bg-accent/25 px-1.5 text-[11px] text-neutral-100">
-                  {playlist.entries.length}
+                  {verseList.entries.length}
                 </span>
               )}
             </button>
@@ -706,53 +696,46 @@ export function BibleBrowserModal({ open, onClose }: { open: boolean; onClose: (
           </>
         )}
 
-        {showPlaylist && (
+        {showVerseList && (
           <aside className="absolute bottom-0 right-0 top-[57px] z-20 flex w-[300px] flex-col border-l border-surface-800 bg-surface-900 shadow-2xl">
             <div className="flex items-center justify-between border-b border-surface-800 px-3 py-2">
               <span className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500">
-                Lista do culto
+                Versículos do culto
               </span>
-              <button onClick={() => setShowPlaylist(false)} title="Fechar" className="icon-btn h-6 w-6">
+              <button onClick={() => setShowVerseList(false)} title="Fechar" className="icon-btn h-6 w-6">
                 <Icon name="x" size={13} />
               </button>
             </div>
             <div className="flex-1 overflow-y-auto p-2">
-              {playlist.entries.length === 0 ? (
+              {verseList.entries.length === 0 ? (
                 <div className="px-3 py-8 text-center text-xs leading-relaxed text-neutral-600">
-                  Nada guardado ainda. Abra um versículo e clique em “+ Culto” pra ele ficar aqui, junto
-                  das músicas.
+                  Nenhum versículo guardado ainda. Abra um versículo e clique em “+ Culto” pra ele ficar
+                  aqui.
                 </div>
               ) : (
-                playlist.entries.map((entry, i) => (
+                verseList.entries.map((entry, i) => (
                   <div
                     key={entry.uid}
                     className="group mb-1 flex items-start gap-1.5 rounded-md border border-transparent px-1.5 py-1.5 hover:bg-surface-800"
                   >
                     <span className="w-4 shrink-0 pt-0.5 text-center text-[11px] text-neutral-600">{i + 1}</span>
                     <button
-                      onClick={() => entry.verse && showSavedVerse(entry)}
-                      disabled={!entry.verse}
-                      title={entry.verse ? 'Mandar este versículo pro telão' : 'Música da lista (use a janela de músicas)'}
-                      className="min-w-0 flex-1 text-left disabled:cursor-default"
+                      onClick={() => showSavedVerse(entry)}
+                      title="Mandar este versículo pro telão"
+                      className="min-w-0 flex-1 text-left"
                     >
                       <div className="flex items-center gap-1.5">
-                        <span className={entry.verse ? 'shrink-0 text-accent' : 'shrink-0 text-neutral-500'}>
-                          <Icon name={entry.verse ? 'book' : 'music'} size={12} />
+                        <span className="shrink-0 text-accent">
+                          <Icon name="book" size={12} />
                         </span>
-                        <span className="truncate text-xs text-neutral-100">
-                          {entry.verse
-                            ? entry.verse.reference
-                            : (songs.find((x) => x.id === entry.songId)?.title ?? 'Música removida')}
-                        </span>
+                        <span className="truncate text-xs text-neutral-100">{entry.reference}</span>
                       </div>
-                      {entry.verse && (
-                        <div className="line-clamp-2 pl-[18px] text-[11px] leading-snug text-neutral-500">
-                          {entry.verse.text}
-                        </div>
-                      )}
+                      <div className="line-clamp-2 pl-[18px] text-[11px] leading-snug text-neutral-500">
+                        {entry.text}
+                      </div>
                     </button>
                     <button
-                      onClick={() => removeFromPlaylist(entry.uid)}
+                      onClick={() => removeSavedVerse(entry.uid)}
                       title="Tirar da lista"
                       className="icon-btn h-6 w-6 shrink-0 opacity-0 group-hover:opacity-100"
                     >
@@ -763,7 +746,8 @@ export function BibleBrowserModal({ open, onClose }: { open: boolean; onClose: (
               )}
             </div>
             <div className="border-t border-surface-800 px-3 py-2 text-[10px] leading-snug text-neutral-600">
-              Clique num versículo pra mandar pro telão. A mesma lista aparece na janela de músicas.
+              Clique num versículo pra mandar pro telão. Esta lista é só da Bíblia — as músicas do culto
+              ficam na janela de músicas.
             </div>
           </aside>
         )}

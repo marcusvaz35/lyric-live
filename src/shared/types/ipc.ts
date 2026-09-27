@@ -36,6 +36,8 @@ export const IPC = {
   holyricsTestConnection: 'holyrics:testConnection',
   holyricsListSongs: 'holyrics:listSongs',
   holyricsImportSongs: 'holyrics:importSongs',
+  versesGet: 'verses:get',
+  versesSave: 'verses:save',
   playlistGet: 'playlist:get',
   playlistSave: 'playlist:save',
   appCommand: 'app:command',

@@ -57,18 +57,21 @@ export interface SongSearchResult {
 }
 
 /** Uma música na playlist do culto (a mesma música pode entrar mais de uma vez). */
-/** Versículo-chave guardado no culto (o texto vai junto, pra projetar sem reabrir a Bíblia). */
-export interface PlaylistVerse {
+export interface PlaylistEntry {
+  uid: string
+  songId: string
+}
+
+/** Versículo-chave guardado pro culto. Fica numa lista só da Bíblia, separada das músicas;
+ * o texto vai junto pra dar pra projetar sem reabrir a versão. */
+export interface VerseListEntry {
+  uid: string
   reference: string
   text: string
 }
 
-export interface PlaylistEntry {
-  uid: string
-  /** Música da biblioteca; entradas antigas da playlist sempre têm este campo. */
-  songId?: string
-  /** Versículo-chave, quando a entrada veio da Bíblia em vez da biblioteca de músicas. */
-  verse?: PlaylistVerse
+export interface VerseList {
+  entries: VerseListEntry[]
 }
 
 /** Ordem das músicas do culto e qual está tocando; fica salva entre aberturas do programa. */

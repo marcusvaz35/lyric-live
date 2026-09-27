@@ -13,7 +13,7 @@ import {
 } from '@shared/types/ipc'
 import type { Project } from '@shared/types/project'
 import type { BibleBook, BibleVersionMeta } from '@shared/types/bible'
-import type { Playlist, Song, SongSearchResult, SongSummary } from '@shared/types/song'
+import type { Playlist, Song, SongSearchResult, SongSummary, VerseList } from '@shared/types/song'
 import type { HolyricsImportSongsResult, HolyricsSettings, HolyricsSongSummary } from '@shared/types/holyrics'
 import type { TranscribedSegment, TranscribeProgress } from '@shared/types/transcribe'
 
@@ -113,6 +113,10 @@ const api = {
       ipcRenderer.invoke(IPC.holyricsListSongs, settings),
     importSongs: (settings: HolyricsSettings, ids: string[]): Promise<HolyricsImportSongsResult> =>
       ipcRenderer.invoke(IPC.holyricsImportSongs, settings, ids)
+  },
+  verses: {
+    get: (): Promise<VerseList> => ipcRenderer.invoke(IPC.versesGet),
+    save: (list: VerseList): Promise<void> => ipcRenderer.invoke(IPC.versesSave, list)
   },
   playlist: {
     get: (): Promise<Playlist> => ipcRenderer.invoke(IPC.playlistGet),

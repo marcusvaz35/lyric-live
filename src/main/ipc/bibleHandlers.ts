@@ -1,5 +1,7 @@
 import { ipcMain } from 'electron'
 import { IPC } from '@shared/types/ipc'
+import type { VerseList } from '@shared/types/song'
+import { readVerseList, saveVerseList } from '../persistence/verseList'
 import {
   deleteBibleVersion,
   downloadBibleVersion,
@@ -14,4 +16,6 @@ export function registerBibleHandlers(): void {
   ipcMain.handle(IPC.bibleReadVersion, (_event, versionId: string) => readBibleVersion(versionId))
   ipcMain.handle(IPC.bibleImportVersion, (_event, versionId: string) => importBibleVersion(versionId))
   ipcMain.handle(IPC.bibleDeleteVersion, (_event, versionId: string) => deleteBibleVersion(versionId))
+  ipcMain.handle(IPC.versesGet, () => readVerseList())
+  ipcMain.handle(IPC.versesSave, (_event, list: VerseList) => saveVerseList(list))
 }
