@@ -10,6 +10,7 @@ import { LiveTextOverlay } from '../preview/LiveTextOverlay'
 
 const FONT_KEY = 'lyriclive.bibleFontPct'
 const UPPER_KEY = 'lyriclive.bibleUpper'
+const REF_KEY = 'lyriclive.bibleShowRef'
 /** Maiúsculas ocupam mais largura que minúsculas: cabem menos letras por linha. */
 const UPPER_WIDTH_FACTOR = 1.2
 const FONT_MIN = 50
@@ -23,6 +24,15 @@ function readSavedFontPct(): number {
     /* sem armazenamento: usa o padrão */
   }
   return 100
+}
+
+function readSavedShowRef(): boolean {
+  try {
+    // padrão ligado: a referência aparece a não ser que a pessoa desligue
+    return localStorage.getItem(REF_KEY) !== '0'
+  } catch {
+    return true
+  }
 }
 
 function readSavedUpper(): boolean {
@@ -55,6 +65,8 @@ export function BibleBrowserModal({ open, onClose }: { open: boolean; onClose: (
   const [slideIndex, setSlideIndex] = useState(0)
   /** Tamanho da letra no telão (50–200%), lembrado entre as aberturas. */
   const [fontPct, setFontPct] = useState(readSavedFontPct)
+  /** Mostrar "Livro Cap:Vers" no telão junto com o versículo. */
+  const [showRef, setShowRef] = useState(readSavedShowRef)
   /** Letras todas maiúsculas no telão (só no texto do versículo). */
   const [upper, setUpper] = useState(readSavedUpper)
 
@@ -101,7 +113,8 @@ export function BibleBrowserModal({ open, onClose }: { open: boolean; onClose: (
     verseIndex: number,
     slideIdx: number,
     pct = fontPct,
-    up = upper
+    up = upper,
+    ref = showRef
   ): void => {
     const text = book.chapters[ch - 1]?.[verseIndex]
     if (text === undefined) return
@@ -109,9 +122,22 @@ export function BibleBrowserModal({ open, onClose }: { open: boolean; onClose: (
     const slide = slides[Math.min(slideIdx, slides.length - 1)] ?? text
     window.api?.live.pushOverlay({
       text: slide,
-      reference: `${book.name} ${ch}:${verseIndex + 1}`,
+      reference: ref ? `${book.name} ${ch}:${verseIndex + 1}` : '',
       fontScale: pct / 100
     })
+  }
+
+  /** Liga/desliga a referência no telão (o versículo continua igual). */
+  const changeShowRef = (next: boolean): void => {
+    setShowRef(next)
+    try {
+      localStorage.setItem(REF_KEY, next ? '1' : '0')
+    } catch {
+      /* sem armazenamento: só não lembra na próxima vez */
+    }
+    if (reading && books) {
+      showVerseOnScreen(books[bookIndex], chapter, readingVerseIndex, slideIndex, fontPct, upper, next)
+    }
   }
 
   /** Liga/desliga as letras maiúsculas: refaz os trechos (maiúscula ocupa mais) e atualiza o telão. */
@@ -386,6 +412,15 @@ export function BibleBrowserModal({ open, onClose }: { open: boolean; onClose: (
               </button>
             </div>
             <button
+              onClick={() => changeShowRef(!showRef)}
+              title={showRef ? 'Não mostrar a referência no telão' : 'Mostrar “Livro Cap:Vers” no telão'}
+              className={`rounded-md border px-2.5 py-1 text-sm hover:bg-surface-800 ${
+                showRef ? 'border-accent bg-accent/15 text-neutral-100' : 'border-surface-700 text-neutral-200'
+              }`}
+            >
+              Ref.
+            </button>
+            <button
               onClick={() => changeUpper(!upper)}
               title={upper ? 'Voltar para maiúsculas e minúsculas' : 'Deixar todas as letras maiúsculas'}
               className={`rounded-md border px-2.5 py-1 text-sm hover:bg-surface-800 ${
@@ -463,7 +498,7 @@ export function BibleBrowserModal({ open, onClose }: { open: boolean; onClose: (
                   embedded
                   overlay={{
                     text: readingSlides[slideIndex] ?? '',
-                    reference: `${currentBook?.name ?? ''} ${chapter}:${readingVerseIndex + 1}`,
+                    reference: showRef ? `${currentBook?.name ?? ''} ${chapter}:${readingVerseIndex + 1}` : '',
                     fontScale: fontPct / 100
                   }}
                 />

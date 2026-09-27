@@ -240,8 +240,12 @@ export function LiveTextOverlay({
       </p>
       {overlay.reference && (
         <p
-          className="font-medium text-accent"
-          style={{ fontSize: embedded ? '2cqw' : 'clamp(16px, 2vw, 40px)' }}
+          className="font-semibold tracking-wide text-white/85"
+          style={{
+            // acompanha o tamanho da letra do versículo e fica em branco: roxo pequeno some no projetor
+            fontSize: embedded ? `calc(2.4cqw * ${fontScale})` : `calc(clamp(18px, 2.4vw, 52px) * ${fontScale})`,
+            textShadow: '0 2px 12px rgba(0, 0, 0, 0.6)'
+          }}
         >
           {overlay.reference}
         </p>
