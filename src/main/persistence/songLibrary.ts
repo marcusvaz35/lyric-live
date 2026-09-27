@@ -20,7 +20,12 @@ export async function listSongs(): Promise<SongSummary[]> {
     try {
       const raw = await fs.readFile(join(songsDir(), file), 'utf-8')
       const song = JSON.parse(raw) as Song
-      summaries.push({ id: song.id, title: song.title, artist: song.artist })
+      summaries.push({
+        id: song.id,
+        title: song.title,
+        artist: song.artist,
+        text: song.blocks.join('\n')
+      })
     } catch {
       // ignora arquivo corrompido/ilegível
     }

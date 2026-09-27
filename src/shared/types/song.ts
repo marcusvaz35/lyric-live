@@ -30,6 +30,9 @@ export interface Song {
   title: string
   artist: string
   author?: string
+  /** Campos livres, iguais aos do Holyrics: anotação interna e informação de direitos. */
+  note?: string
+  copyright?: string
   blocks: string[]
   /** Efeitos por slide, alinhado com `blocks` (mesmo tamanho); null = sem efeito. */
   blockFx?: (SlideFx | null)[]
@@ -42,6 +45,8 @@ export interface SongSummary {
   id: string
   title: string
   artist: string
+  /** Letra inteira, só pra pesquisar por um trecho dela (não aparece na lista). */
+  text?: string
 }
 
 /** Resultado de busca na internet: só título/artista, pra identificar a

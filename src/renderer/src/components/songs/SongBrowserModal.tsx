@@ -25,6 +25,14 @@ interface DraftSong {
 
 const EMPTY_DRAFT: DraftSong = { title: '', artist: '', author: '', lyrics: '' }
 
+/** Minúsculas e sem acento: pesquisar "coracao" acha "coração". */
+function normalize(text: string): string {
+  return text
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+}
+
 const FX_MODE_KEY = 'lyriclive.fxMode'
 
 function loadManualFx(): boolean {
@@ -92,6 +100,8 @@ export function SongBrowserModal({ open, onClose }: { open: boolean; onClose: ()
   /** Editar a letra toda de uma vez (como no Holyrics): cada linha em branco vira um slide novo. */
   const [editingFullLyrics, setEditingFullLyrics] = useState(false)
   const [fullLyricsText, setFullLyricsText] = useState('')
+  /** Campos da música em edição (mesmos do Holyrics: título, artista, autor, anotação, copyright). */
+  const [songEdit, setSongEdit] = useState({ title: '', artist: '', author: '', note: '', copyright: '' })
   const [editIsNew, setEditIsNew] = useState(false)
   /** Arrastar slide pra reordenar: quem está sendo arrastado e o vão (0..n) onde vai cair. */
   const [dragIndex, setDragIndex] = useState<number | null>(null)
@@ -172,10 +182,22 @@ export function SongBrowserModal({ open, onClose }: { open: boolean; onClose: ()
 
   const filteredSongs = useMemo(() => {
     if (!songs) return []
-    const q = query.trim().toLowerCase()
+    const q = normalize(query.trim())
     if (!q) return songs
-    return songs.filter((s) => s.title.toLowerCase().includes(q) || s.artist.toLowerCase().includes(q))
+    // também procura dentro da letra: dá pra achar a música por um trecho que você lembra
+    return songs.filter(
+      (s) => normalize(s.title).includes(q) || normalize(s.artist).includes(q) || normalize(s.text ?? '').includes(q)
+    )
   }, [songs, query])
+
+  /** Linha da letra que casou com a pesquisa (só quando o título/artista não casaram). */
+  const lyricMatch = (song: SongSummary): string | null => {
+    const q = normalize(query.trim())
+    if (!q || !song.text) return null
+    if (normalize(song.title).includes(q) || normalize(song.artist).includes(q)) return null
+    const line = song.text.split('\n').find((l) => l.trim() && normalize(l).includes(q))
+    return line ? line.trim() : null
+  }
 
   const changeFxMode = (manual: boolean): void => {
     setManualFx(manual)
@@ -282,11 +304,11 @@ export function SongBrowserModal({ open, onClose }: { open: boolean; onClose: ()
     if (selectedSong) pushBlock(selectedSong, blockIndex, true, true)
   }
 
-  const openReading = async (id: string): Promise<void> => {
-    if (!window.api) return
+  const openReading = async (id: string): Promise<Song | null> => {
+    if (!window.api) return null
     loadingSongRef.current = id
     const song = await window.api.song.read(id)
-    if (loadingSongRef.current !== id) return
+    if (loadingSongRef.current !== id) return null
     // re-divide em blocos de 2 linhas (músicas salvas antes tinham blocos maiores)
     const newBlocks = splitIntoBlocks(song.blocks.join('\n\n'))
     const blockFx =
@@ -298,6 +320,7 @@ export function SongBrowserModal({ open, onClose }: { open: boolean; onClose: ()
     // o telão continua com o que já estava: o slide só vai pra lá quando eu clicar nele
     setFxOnScreen(false)
     stageBlock(normalized, 0, true)
+    return normalized
   }
 
   /** Volta pra biblioteca sem mexer no telão (dá pra escolher a próxima música com a letra no ar). */
@@ -424,24 +447,56 @@ export function SongBrowserModal({ open, onClose }: { open: boolean; onClose: ()
     pushBlock(updated, nextIndex)
   }
 
-  const startEditFullLyrics = (): void => {
-    if (!selectedSong) return
-    setFullLyricsText(selectedSong.blocks.join('\n\n'))
+  const startEditFullLyrics = (song: Song | null = selectedSong): void => {
+    if (!song) return
+    setFullLyricsText(song.blocks.join('\n\n'))
+    setSongEdit({
+      title: song.title,
+      artist: song.artist,
+      author: song.author ?? '',
+      note: song.note ?? '',
+      copyright: song.copyright ?? ''
+    })
     setEditingFullLyrics(true)
   }
 
-  /** Redivide a letra toda pelas linhas em branco (2 linhas por slide, como a criação de música)
-   * e substitui os slides. Efeitos e destaques dos slides antigos se perdem — a letra mudou de estrutura. */
+  /** Abre a música e já cai na tela de edição (igual dar dois cliques na lista do Holyrics). */
+  const editFromList = async (id: string): Promise<void> => {
+    const song = await openReading(id)
+    startEditFullLyrics(song)
+  }
+
+  /** Salva os dados da música e redivide a letra toda pelas linhas em branco (2 linhas por slide).
+   * Slides cujo texto não mudou mantêm seus efeitos e destaques; os novos começam limpos. */
   const commitFullLyrics = async (): Promise<void> => {
     if (!selectedSong) return
     const newBlocks = splitIntoBlocks(fullLyricsText)
     setEditingFullLyrics(false)
     if (newBlocks.length === 0) return
+
+    // efeitos ficam guardados pelo texto do slide (em fila, caso o mesmo trecho se repita)
+    const byText = new Map<string, (SlideFx | null)[]>()
+    selectedSong.blocks.forEach((text, i) => {
+      const key = text.trim()
+      const queue = byText.get(key) ?? []
+      queue.push(selectedSong.blockFx?.[i] ?? null)
+      byText.set(key, queue)
+    })
+    const newFx = newBlocks.map((text) => byText.get(text.trim())?.shift() ?? null)
+
     const updated = await persistBlocks(
-      selectedSong,
+      {
+        ...selectedSong,
+        title: songEdit.title.trim() || selectedSong.title,
+        artist: songEdit.artist.trim() || 'Desconhecido',
+        author: songEdit.author.trim() || undefined,
+        note: songEdit.note.trim() || undefined,
+        copyright: songEdit.copyright.trim() || undefined
+      },
       newBlocks,
-      newBlocks.map(() => null)
+      newFx
     )
+    refreshSongs()
     setBlockIndex(0)
     pushBlock(updated, 0)
   }
@@ -755,7 +810,7 @@ export function SongBrowserModal({ open, onClose }: { open: boolean; onClose: ()
                 <input
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
-                  placeholder="Pesquisar na sua biblioteca..."
+                  placeholder="Pesquisar por título, artista ou trecho da letra..."
                   className="field-input flex-1"
                 />
                 <button
@@ -857,9 +912,21 @@ export function SongBrowserModal({ open, onClose }: { open: boolean; onClose: ()
                       >
                         <div className="truncate text-sm text-neutral-100">{s.title}</div>
                         <div className="truncate text-xs text-neutral-500">{s.artist}</div>
+                        {lyricMatch(s) && (
+                          <div className="truncate text-xs italic text-accent/80" title="Trecho encontrado na letra">
+                            “{lyricMatch(s)}”
+                          </div>
+                        )}
                       </button>
                       {!selectMode && (
                       <>
+                      <button
+                        onClick={() => editFromList(s.id)}
+                        title="Editar a música (título, artista, letra…)"
+                        className="icon-btn h-7 w-7 shrink-0 opacity-50 hover:!opacity-100"
+                      >
+                        <Icon name="pencil" size={14} />
+                      </button>
                       <button
                         onClick={() => addToPlaylist(s.id)}
                         title="Adicionar à playlist do culto"
@@ -1123,11 +1190,11 @@ export function SongBrowserModal({ open, onClose }: { open: boolean; onClose: ()
                   + Frase
                 </button>
                 <button
-                  onClick={startEditFullLyrics}
-                  title="Cole a letra toda: cada linha em branco separa um slide novo"
+                  onClick={() => startEditFullLyrics()}
+                  title="Editar título, artista, autor, copyright e a letra toda"
                   className="rounded-md border border-surface-700 px-2 py-1 text-neutral-300 hover:bg-surface-800"
                 >
-                  Editar letra completa
+                  Editar música
                 </button>
                 <button
                   onClick={addBlock}
@@ -1735,10 +1802,53 @@ export function SongBrowserModal({ open, onClose }: { open: boolean; onClose: ()
         )}
 
         {editingFullLyrics && selectedSong && (
-          <div className="absolute inset-0 z-10 flex flex-col gap-3 bg-surface-900 p-5">
+          <div className="absolute inset-0 z-10 flex flex-col gap-3 overflow-y-auto bg-surface-900 p-5">
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <div className="field-label mb-1">Título</div>
+                <input
+                  value={songEdit.title}
+                  onChange={(e) => setSongEdit({ ...songEdit, title: e.target.value })}
+                  className="field-input"
+                />
+              </div>
+              <div>
+                <div className="field-label mb-1">Artista</div>
+                <input
+                  value={songEdit.artist}
+                  onChange={(e) => setSongEdit({ ...songEdit, artist: e.target.value })}
+                  className="field-input"
+                />
+              </div>
+              <div>
+                <div className="field-label mb-1">Autor</div>
+                <input
+                  value={songEdit.author}
+                  onChange={(e) => setSongEdit({ ...songEdit, author: e.target.value })}
+                  className="field-input"
+                />
+              </div>
+              <div>
+                <div className="field-label mb-1">Copyright</div>
+                <input
+                  value={songEdit.copyright}
+                  onChange={(e) => setSongEdit({ ...songEdit, copyright: e.target.value })}
+                  className="field-input"
+                />
+              </div>
+            </div>
+            <div>
+              <div className="field-label mb-1">Anotação</div>
+              <input
+                value={songEdit.note}
+                onChange={(e) => setSongEdit({ ...songEdit, note: e.target.value })}
+                placeholder="Tom, observações do ensaio, o que quiser"
+                className="field-input"
+              />
+            </div>
             <div className="field-label">
-              Letra completa de {selectedSong.title} — separe os slides com uma linha em branco (cada
-              slide mostra 2 linhas por vez)
+              Letra completa — separe os slides com uma linha em branco (cada slide mostra 2 linhas
+              por vez). Slides que você não mexer mantêm os efeitos.
             </div>
             <textarea
               value={fullLyricsText}
