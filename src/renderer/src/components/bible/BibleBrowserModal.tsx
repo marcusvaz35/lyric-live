@@ -156,7 +156,12 @@ export function BibleBrowserModal({ open, onClose }: { open: boolean; onClose: (
     if (!book || text === undefined || !window.api) return
     const reference = `${book.name} ${chapter}:${verseIndex + 1}`
     const current = await window.api.verses.get()
-    const next: VerseList = { entries: [...current.entries, { uid: nanoid(), reference, text }] }
+    const next: VerseList = {
+      entries: [
+        ...current.entries,
+        { uid: nanoid(), reference, text, bookName: book.name, chapter, verse: verseIndex + 1 }
+      ]
+    }
     await window.api.verses.save(next)
     setVerseList(next)
     setAddedToPlaylist(reference)
@@ -169,11 +174,24 @@ export function BibleBrowserModal({ open, onClose }: { open: boolean; onClose: (
     await window.api?.verses.save(next)
   }
 
-  /** Manda um versículo guardado direto pro telão, já dividido em trechos. */
-  const showSavedVerse = (entry: VerseListEntry, slide = 0): void => {
+  /** Abre o versículo guardado: vai até ele na Bíblia e entra no modo de leitura (já no telão).
+   * Se não der pra localizar (versão sem aquele livro), pelo menos projeta o texto guardado. */
+  const openSavedVerse = (entry: VerseListEntry): void => {
+    // entradas antigas não guardavam a posição: tenta tirar da própria referência ("João 3:16")
+    const parsed = /^(.+)\s(\d+):(\d+)$/.exec(entry.reference)
+    const bookName = entry.bookName ?? parsed?.[1]
+    const ch = entry.chapter ?? Number(parsed?.[2])
+    const verse = entry.verse ?? Number(parsed?.[3])
+    const bIdx = books?.findIndex((b) => b.name === bookName) ?? -1
+
+    if (books && bIdx >= 0 && ch >= 1 && verse >= 1 && books[bIdx].chapters[ch - 1]?.[verse - 1] !== undefined) {
+      enterReadingMode(bIdx, ch, verse - 1)
+      return
+    }
+
     const slides = slidesFor(entry.text)
     window.api?.live.pushOverlay({
-      text: slides[Math.min(slide, slides.length - 1)] ?? entry.text,
+      text: slides[0] ?? entry.text,
       reference: showRef ? entry.reference : '',
       fontScale: fontPct / 100,
       fontFamily: fontFamily || undefined
@@ -746,8 +764,8 @@ export function BibleBrowserModal({ open, onClose }: { open: boolean; onClose: (
                   >
                     <span className="w-4 shrink-0 pt-0.5 text-center text-[11px] text-neutral-600">{i + 1}</span>
                     <button
-                      onClick={() => showSavedVerse(entry)}
-                      title="Mandar este versículo pro telão"
+                      onClick={() => openSavedVerse(entry)}
+                      title="Abrir este versículo (vai pro telão e dá pra seguir com as setas)"
                       className="min-w-0 flex-1 text-left"
                     >
                       <div className="flex items-center gap-1.5">
@@ -772,8 +790,8 @@ export function BibleBrowserModal({ open, onClose }: { open: boolean; onClose: (
               )}
             </div>
             <div className="border-t border-surface-800 px-3 py-2 text-[10px] leading-snug text-neutral-600">
-              Clique num versículo pra mandar pro telão. Esta lista é só da Bíblia — as músicas do culto
-              ficam na janela de músicas.
+              Clique num versículo pra abrir e mandar pro telão. Esta lista é só da Bíblia — as músicas
+              do culto ficam na janela de músicas.
             </div>
           </aside>
         )}

@@ -68,6 +68,11 @@ export interface VerseListEntry {
   uid: string
   reference: string
   text: string
+  /** Onde ele fica na Bíblia, pra clicar na lista e abrir direto nele. */
+  bookName?: string
+  chapter?: number
+  /** Número do versículo (começando em 1). */
+  verse?: number
 }
 
 export interface VerseList {
