@@ -31,7 +31,8 @@ const PATHS: Record<string, string[]> = {
   grip: ['M9 6h.01', 'M15 6h.01', 'M9 12h.01', 'M15 12h.01', 'M9 18h.01', 'M15 18h.01'],
   list: ['M8 6h13', 'M8 12h13', 'M8 18h13', 'M3 6h.01', 'M3 12h.01', 'M3 18h.01'],
   'arrow-right': ['M5 12h14', 'M13 6l6 6-6 6'],
-  replay: ['M4 12a8 8 0 1 0 2.5-5.8', 'M4 4v5h5']
+  replay: ['M4 12a8 8 0 1 0 2.5-5.8', 'M4 4v5h5'],
+  search: ['M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14z', 'M16.5 16.5L21 21']
 }
 
 export type IconName = keyof typeof PATHS

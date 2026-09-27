@@ -25,12 +25,24 @@ interface DraftSong {
 
 const EMPTY_DRAFT: DraftSong = { title: '', artist: '', author: '', lyrics: '' }
 
-/** Minúsculas e sem acento: pesquisar "coracao" acha "coração". */
-function normalize(text: string): string {
-  return text
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase()
+const ACCENTED = 'áàâãäéèêëíìîïóòôõöúùûüçñ'
+const PLAIN = 'aaaaaeeeeiiiiooooouuuucn'
+
+/** Junta tudo numa linha só: assim uma frase longa acha mesmo quando, na letra,
+ * ela atravessa a quebra de linha entre dois versos. */
+function flatten(text: string): string {
+  return text.normalize('NFC').replace(/\s+/g, ' ').trim()
+}
+
+/** Minúsculas e sem acento ("coracao" acha "coração"), trocando letra por letra
+ * pra posição continuar batendo com o texto original (é o que localiza o trecho). */
+function fold(text: string): string {
+  let out = ''
+  for (const ch of text.toLowerCase()) {
+    const i = ACCENTED.indexOf(ch)
+    out += i === -1 ? ch : PLAIN[i]
+  }
+  return out
 }
 
 const FX_MODE_KEY = 'lyriclive.fxMode'
@@ -182,21 +194,29 @@ export function SongBrowserModal({ open, onClose }: { open: boolean; onClose: ()
 
   const filteredSongs = useMemo(() => {
     if (!songs) return []
-    const q = normalize(query.trim())
+    const q = fold(flatten(query))
     if (!q) return songs
     // também procura dentro da letra: dá pra achar a música por um trecho que você lembra
     return songs.filter(
-      (s) => normalize(s.title).includes(q) || normalize(s.artist).includes(q) || normalize(s.text ?? '').includes(q)
+      (s) =>
+        fold(flatten(s.title)).includes(q) ||
+        fold(flatten(s.artist)).includes(q) ||
+        fold(flatten(s.text ?? '')).includes(q)
     )
   }, [songs, query])
 
-  /** Linha da letra que casou com a pesquisa (só quando o título/artista não casaram). */
+  /** Trecho da letra que casou com a pesquisa, com um pedaço antes e depois pra dar contexto
+   * (só quando o título/artista não casaram). */
   const lyricMatch = (song: SongSummary): string | null => {
-    const q = normalize(query.trim())
+    const q = fold(flatten(query))
     if (!q || !song.text) return null
-    if (normalize(song.title).includes(q) || normalize(song.artist).includes(q)) return null
-    const line = song.text.split('\n').find((l) => l.trim() && normalize(l).includes(q))
-    return line ? line.trim() : null
+    if (fold(flatten(song.title)).includes(q) || fold(flatten(song.artist)).includes(q)) return null
+    const flat = flatten(song.text)
+    const at = fold(flat).indexOf(q)
+    if (at === -1) return null
+    const from = Math.max(0, at - 30)
+    const to = Math.min(flat.length, at + q.length + 30)
+    return `${from > 0 ? '…' : ''}${flat.slice(from, to)}${to < flat.length ? '…' : ''}`
   }
 
   const changeFxMode = (manual: boolean): void => {
@@ -806,13 +826,35 @@ export function SongBrowserModal({ open, onClose }: { open: boolean; onClose: ()
         {mode === 'list' && (
           <div className="flex flex-1 overflow-hidden">
             <div className="flex min-w-0 flex-1 flex-col">
-              <div className="flex items-center gap-2 border-b border-surface-800 px-4 py-3">
-                <input
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  placeholder="Pesquisar por título, artista ou trecho da letra..."
-                  className="field-input flex-1"
-                />
+              <div className="border-b border-surface-800 px-4 py-3">
+                <div className="relative">
+                  <Icon
+                    name="search"
+                    size={16}
+                    className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-neutral-500"
+                  />
+                  <input
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                    placeholder="Pesquisar por título, artista ou uma frase inteira da letra..."
+                    className="field-input w-full py-2.5 pl-9 pr-20 text-base"
+                  />
+                  {query && (
+                    <button
+                      onClick={() => setQuery('')}
+                      title="Limpar a pesquisa"
+                      className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md px-2 py-1 text-xs text-neutral-400 hover:bg-surface-800 hover:text-neutral-200"
+                    >
+                      Limpar
+                    </button>
+                  )}
+                </div>
+                <div className="mt-2 flex items-center gap-2">
+                  <span className="mr-auto text-xs text-neutral-500">
+                    {query.trim()
+                      ? `${filteredSongs.length} de ${songs?.length ?? 0} ${filteredSongs.length === 1 ? 'música' : 'músicas'}`
+                      : `${songs?.length ?? 0} ${songs?.length === 1 ? 'música' : 'músicas'} na biblioteca`}
+                  </span>
                 <button
                   onClick={() => setHolyricsImportOpen(true)}
                   className="rounded-md border border-surface-700 px-3 py-1.5 text-sm text-neutral-300 hover:bg-surface-800"
@@ -843,6 +885,7 @@ export function SongBrowserModal({ open, onClose }: { open: boolean; onClose: ()
                 >
                   + Nova música
                 </button>
+                </div>
               </div>
 
               {selectMode && (
