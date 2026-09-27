@@ -64,7 +64,7 @@ export function BibleBrowserModal({ open, onClose }: { open: boolean; onClose: (
   const [chapter, setChapter] = useState(1)
   const [locatedVerse, setLocatedVerse] = useState<number | null>(null)
   const [quickBuffer, setQuickBuffer] = useState<string | null>(null)
-  const verseRefs = useRef<(HTMLButtonElement | null)[]>([])
+  const verseRefs = useRef<(HTMLElement | null)[]>([])
 
   // Modo leitura ao vivo: entra ao escolher um versículo, e as setas ←/→
   // avançam/voltam versículo, atualizando o overlay que a janela LIVE mostra.
@@ -148,17 +148,17 @@ export function BibleBrowserModal({ open, onClose }: { open: boolean; onClose: (
     })
   }
 
-  /** Guarda o versículo atual na lista de versículos do culto (separada das músicas). */
-  const addVerseToPlaylist = async (): Promise<void> => {
+  /** Guarda um versículo na lista do culto (separada das músicas), sem mexer no telão.
+   * Sem `verseIndex`, guarda o que está sendo lido agora. */
+  const addVerseToPlaylist = async (verseIndex = readingVerseIndex): Promise<void> => {
     const book = books?.[bookIndex]
-    const text = book?.chapters[chapter - 1]?.[readingVerseIndex]
+    const text = book?.chapters[chapter - 1]?.[verseIndex]
     if (!book || text === undefined || !window.api) return
-    const reference = `${book.name} ${chapter}:${readingVerseIndex + 1}`
+    const reference = `${book.name} ${chapter}:${verseIndex + 1}`
     const current = await window.api.verses.get()
     const next: VerseList = { entries: [...current.entries, { uid: nanoid(), reference, text }] }
     await window.api.verses.save(next)
     setVerseList(next)
-    setShowVerseList(true)
     setAddedToPlaylist(reference)
     window.setTimeout(() => setAddedToPlaylist(null), 2200)
   }
@@ -484,7 +484,7 @@ export function BibleBrowserModal({ open, onClose }: { open: boolean; onClose: (
             </div>
             {reading && (
               <button
-                onClick={addVerseToPlaylist}
+                onClick={() => addVerseToPlaylist()}
                 title="Guardar este versículo na lista do culto, junto das músicas"
                 className="flex items-center gap-1 rounded-md border border-surface-700 px-2.5 py-1 text-sm text-neutral-200 hover:border-accent hover:text-neutral-100"
               >
@@ -630,24 +630,50 @@ export function BibleBrowserModal({ open, onClose }: { open: boolean; onClose: (
             <div className="flex flex-1 overflow-hidden">
               <div className="flex w-[42%] flex-col overflow-hidden border-r border-surface-800">
                 <div className="flex-1 space-y-2 overflow-y-scroll p-4">
-                  {verses.map((text, i) => (
-                    <button
-                      key={i}
-                      ref={(el) => {
-                        verseRefs.current[i] = el
-                      }}
-                      onClick={() => enterReadingMode(bookIndex, chapter, i)}
-                      title="Clique para exibir ao vivo e continuar lendo com as setas"
-                      className={`block w-full rounded-md p-1.5 text-left text-sm leading-relaxed transition-colors ${
-                        locatedVerse === i + 1
-                          ? 'bg-accent/15 text-neutral-100 ring-1 ring-accent'
-                          : 'text-neutral-300 hover:bg-surface-800'
-                      }`}
-                    >
-                      <span className="mr-1.5 font-semibold text-accent">{i + 1}</span>
-                      {text}
-                    </button>
-                  ))}
+                  {verses.map((text, i) => {
+                    const saved = verseList.entries.some(
+                      (e) => e.reference === `${books[bookIndex].name} ${chapter}:${i + 1}`
+                    )
+                    return (
+                      <div
+                        key={i}
+                        ref={(el) => {
+                          verseRefs.current[i] = el
+                        }}
+                        className={`group flex items-start gap-1 rounded-md p-1.5 transition-colors ${
+                          locatedVerse === i + 1
+                            ? 'bg-accent/15 ring-1 ring-accent'
+                            : 'hover:bg-surface-800'
+                        }`}
+                      >
+                        <button
+                          onClick={() => enterReadingMode(bookIndex, chapter, i)}
+                          title="Clique para exibir ao vivo e continuar lendo com as setas"
+                          className={`min-w-0 flex-1 text-left text-sm leading-relaxed ${
+                            locatedVerse === i + 1 ? 'text-neutral-100' : 'text-neutral-300'
+                          }`}
+                        >
+                          <span className="mr-1.5 font-semibold text-accent">{i + 1}</span>
+                          {text}
+                        </button>
+                        <button
+                          onClick={() => addVerseToPlaylist(i)}
+                          title={
+                            saved
+                              ? 'Já está na lista do culto (clique pra guardar de novo)'
+                              : 'Guardar na lista do culto (não vai pro telão)'
+                          }
+                          className={`mt-0.5 shrink-0 rounded-md border px-1.5 py-0.5 text-[11px] transition-opacity ${
+                            saved
+                              ? 'border-accent/60 text-accent opacity-100'
+                              : 'border-surface-700 text-neutral-400 opacity-0 hover:text-neutral-100 group-hover:opacity-100'
+                          }`}
+                        >
+                          {saved ? '✓ culto' : '+ culto'}
+                        </button>
+                      </div>
+                    )
+                  })}
                 </div>
                 <div className="border-t border-surface-800 p-2 text-[10px] leading-snug text-neutral-600">
                   {selectedVersion.license}
