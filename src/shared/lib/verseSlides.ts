@@ -18,6 +18,9 @@ function wrapLines(text: string, maxChars: number): string[] {
   return lines
 }
 
+/** Em maiúsculas cada letra ocupa mais, então cabe menos por linha. */
+export const UPPER_WIDTH_FACTOR = 1.2
+
 /** Versículos não têm quebra de linha própria (ao contrário de letras de música), então
  * quebramos pelo tamanho da linha e agrupamos de 2 em 2 — mesma ideia de `splitIntoBlocks`,
  * pra caber na tela igual um slide de música em vez de estourar em várias linhas. */

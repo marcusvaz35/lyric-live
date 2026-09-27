@@ -92,7 +92,12 @@ function createLiveWindow(): void {
         sandbox: false
       }
     })
-    liveWindow.once('ready-to-show', () => liveWindow?.setFullScreen(true))
+    liveWindow.once('ready-to-show', () => {
+      // no macOS, setFullScreen usa a animação de Spaces e pisca branco no projetor;
+      // a janela já cobre o monitor inteiro, então basta o modo simples (sem animação)
+      if (process.platform === 'darwin') liveWindow?.setSimpleFullScreen(true)
+      else liveWindow?.setFullScreen(true)
+    })
   } else {
     const work = screen.getPrimaryDisplay().workAreaSize
     const fit = Math.min(1, work.width / 1920, work.height / 1080)
@@ -129,7 +134,17 @@ function createLiveWindow(): void {
 
 const liveController: LiveWindowController = {
   open: () => createLiveWindow(),
-  close: () => liveWindow?.close(),
+  close: () => {
+    const win = liveWindow
+    if (!win || win.isDestroyed()) return
+    // pede o fade pra própria página e só depois fecha, pra não cortar a imagem de uma vez
+    win.webContents
+      .executeJavaScript("document.documentElement.classList.add('live-leaving')")
+      .catch(() => undefined)
+    setTimeout(() => {
+      if (!win.isDestroyed()) win.close()
+    }, 280)
+  },
   isOpen: () => !!liveWindow,
   pushState: (payload: LiveStatePayload) => liveWindow?.webContents.send(IPC.liveState, payload),
   pushOverlay: (payload: LiveOverlayPayload | null) => {

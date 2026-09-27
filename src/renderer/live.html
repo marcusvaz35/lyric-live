@@ -17,6 +17,24 @@
         background: #000 !important;
         margin: 0;
       }
+      /* o conteúdo entra vindo do preto; o fundo já é preto desde o primeiro quadro */
+      #root {
+        animation: live-in 320ms ease both;
+      }
+      @keyframes live-in {
+        from {
+          opacity: 0;
+        }
+        to {
+          opacity: 1;
+        }
+      }
+      /* some antes da janela fechar (o main põe esta classe e espera a transição) */
+      html.live-leaving #root {
+        opacity: 0;
+        transition: opacity 260ms ease;
+        animation: none;
+      }
     </style>
   </head>
   <body style="background: #000">

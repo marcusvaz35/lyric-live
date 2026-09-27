@@ -110,6 +110,8 @@ export interface LiveOverlayPayload {
   phrase?: PhraseLayout | null
   /** Multiplicador do tamanho da letra (1 = padrão). */
   fontScale?: number
+  /** Fonte do texto no telão; vazio = a fonte padrão do programa. */
+  fontFamily?: string
   /** Muda a cada "replay" — é o que faz a animação de entrada tocar de novo. */
   key?: number
 }

@@ -203,6 +203,7 @@ export function LiveTextOverlay({
   const textStyle: CSSProperties = {
     fontSize: embedded ? `calc(4.4cqw * ${fontScale})` : `calc(clamp(28px, 4.4vw, 96px) * ${fontScale})`,
     whiteSpace: 'pre-line',
+    fontFamily: overlay.fontFamily || undefined,
     opacity: blockOverlay.opacity,
     filter: blockOverlay.blur > 0 ? `blur(${blockOverlay.blur}px)` : undefined,
     clipPath: blockOverlay.clipPath,
@@ -243,6 +244,7 @@ export function LiveTextOverlay({
           className="font-semibold tracking-wide text-white/85"
           style={{
             // acompanha o tamanho da letra do versículo e fica em branco: roxo pequeno some no projetor
+            fontFamily: overlay.fontFamily || undefined,
             fontSize: embedded ? `calc(2.4cqw * ${fontScale})` : `calc(clamp(18px, 2.4vw, 52px) * ${fontScale})`,
             textShadow: '0 2px 12px rgba(0, 0, 0, 0.6)'
           }}

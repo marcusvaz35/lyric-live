@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
 import { nanoid } from 'nanoid'
-import type { Playlist, Song, SongSummary, SlideFx, WordFontStyle } from '@shared/types/song'
+import type { Playlist, PlaylistEntry, Song, SongSummary, SlideFx, WordFontStyle } from '@shared/types/song'
+import { MAX_CHARS_PER_LINE, UPPER_WIDTH_FACTOR, splitVerseIntoSlides } from '@shared/lib/verseSlides'
 import type { EffectId } from '@shared/types/project'
 import { splitIntoBlocks } from '../../lib/songBlocks'
 import { SongSearchOnlineModal } from './SongSearchOnlineModal'
@@ -64,6 +65,9 @@ function moveItem<T>(list: T[], from: number, to: number): T[] {
 export function SongBrowserModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [songs, setSongs] = useState<SongSummary[] | null>(null)
   const [query, setQuery] = useState('')
+  /** A lista filtra por este valor: o React atualiza o campo na hora e a lista logo depois,
+   * então digitar continua leve mesmo com a biblioteca grande. */
+  const deferredQuery = useDeferredValue(query)
   const [mode, setMode] = useState<Mode>('list')
   const [draft, setDraft] = useState<DraftSong>(EMPTY_DRAFT)
   const [saving, setSaving] = useState(false)
@@ -101,6 +105,8 @@ export function SongBrowserModal({ open, onClose }: { open: boolean; onClose: ()
   /** Música da biblioteca sendo arrastada pra playlist, e se o cursor está sobre a área da playlist. */
   const [libDrag, setLibDrag] = useState<string | null>(null)
   const [plOver, setPlOver] = useState(false)
+  /** Qual trecho do versículo-chave foi mandado por último (pra cada clique mandar o próximo). */
+  const [verseStep, setVerseStep] = useState<{ uid: string; index: number }>({ uid: '', index: 0 })
 
   const [selectedSong, setSelectedSong] = useState<Song | null>(null)
   const [blockIndex, setBlockIndex] = useState(0)
@@ -163,7 +169,43 @@ export function SongBrowserModal({ open, onClose }: { open: boolean; onClose: ()
     if (window.confirm('Limpar toda a playlist do culto?')) updatePlaylist({ entries: [], currentUid: null })
   }
 
-  const songTitle = (songId: string): SongSummary | undefined => songs?.find((x) => x.id === songId)
+  const songTitle = (songId: string | undefined): SongSummary | undefined =>
+    songId ? songs?.find((x) => x.id === songId) : undefined
+
+  /** Nome e subtítulo de uma entrada do culto — pode ser uma música ou um versículo-chave. */
+  const entryTitle = (entry: PlaylistEntry): string =>
+    entry.verse ? entry.verse.reference : (songTitle(entry.songId)?.title ?? 'Música removida')
+
+  const entrySubtitle = (entry: PlaylistEntry): string =>
+    entry.verse ? entry.verse.text : (songTitle(entry.songId)?.artist ?? '')
+
+  /** Projeta um versículo-chave da playlist, com o mesmo tamanho e fonte da tela da Bíblia.
+   * Versículo comprido vira vários trechos: cada clique manda o próximo. */
+  const showVerseEntry = (entry: PlaylistEntry): void => {
+    if (!entry.verse) return
+    let pct = 100
+    let font = ''
+    let upper = false
+    try {
+      pct = Number(localStorage.getItem('lyriclive.bibleFontPct')) || 100
+      font = localStorage.getItem('lyriclive.bibleFont') ?? ''
+      upper = localStorage.getItem('lyriclive.bibleUpper') === '1'
+    } catch {
+      /* sem armazenamento: usa o padrão */
+    }
+    // mesma conta da tela da Bíblia, pra o trecho quebrar igual
+    const width = Math.max(12, Math.round(MAX_CHARS_PER_LINE / (pct / 100) / (upper ? UPPER_WIDTH_FACTOR : 1)))
+    const raw = splitVerseIntoSlides(entry.verse.text, width)
+    const slides = upper ? raw.map((slide) => slide.toLocaleUpperCase('pt-BR')) : raw
+    const next = entry.uid === verseStep.uid ? (verseStep.index + 1) % slides.length : 0
+    setVerseStep({ uid: entry.uid, index: next })
+    window.api?.live.pushOverlay({
+      text: slides[next] ?? entry.verse.text,
+      reference: entry.verse.reference,
+      fontScale: pct / 100,
+      fontFamily: font || undefined
+    })
+  }
 
   const currentIndex = playlist.entries.findIndex((e) => e.uid === playlist.currentUid)
   const nextEntry = playlist.entries[currentIndex + 1] ?? (currentIndex === -1 ? playlist.entries[0] : undefined)
@@ -173,7 +215,8 @@ export function SongBrowserModal({ open, onClose }: { open: boolean; onClose: ()
     if (!entry) return
     setPlaylist({ ...playlist, currentUid: uid })
     window.api?.playlist.save({ ...playlist, currentUid: uid })
-    openReading(entry.songId)
+    if (entry.verse) showVerseEntry(entry)
+    else if (entry.songId) openReading(entry.songId)
   }
 
   useEffect(() => {
@@ -192,23 +235,28 @@ export function SongBrowserModal({ open, onClose }: { open: boolean; onClose: ()
     }
   }, [open])
 
+  /** Título, artista e letra já achatados e sem acento — preparados uma vez por biblioteca,
+   * não a cada tecla digitada (com muitas músicas isso travava a digitação). */
+  const haystacks = useMemo(() => {
+    const map = new Map<string, string>()
+    for (const s of songs ?? []) {
+      map.set(s.id, fold(flatten(`${s.title} ${s.artist} ${s.text ?? ''}`)))
+    }
+    return map
+  }, [songs])
+
   const filteredSongs = useMemo(() => {
     if (!songs) return []
-    const q = fold(flatten(query))
+    const q = fold(flatten(deferredQuery))
     if (!q) return songs
     // também procura dentro da letra: dá pra achar a música por um trecho que você lembra
-    return songs.filter(
-      (s) =>
-        fold(flatten(s.title)).includes(q) ||
-        fold(flatten(s.artist)).includes(q) ||
-        fold(flatten(s.text ?? '')).includes(q)
-    )
-  }, [songs, query])
+    return songs.filter((s) => haystacks.get(s.id)?.includes(q))
+  }, [songs, deferredQuery, haystacks])
 
   /** Trecho da letra que casou com a pesquisa, com um pedaço antes e depois pra dar contexto
    * (só quando o título/artista não casaram). */
   const lyricMatch = (song: SongSummary): string | null => {
-    const q = fold(flatten(query))
+    const q = fold(flatten(deferredQuery))
     if (!q || !song.text) return null
     if (fold(flatten(song.title)).includes(q) || fold(flatten(song.artist)).includes(q)) return null
     const flat = flatten(song.text)
@@ -696,7 +744,7 @@ export function SongBrowserModal({ open, onClose }: { open: boolean; onClose: ()
     const gone = new Set(ids)
     const currentSongId = playlist.entries.find((en) => en.uid === playlist.currentUid)?.songId
     updatePlaylist({
-      entries: playlist.entries.filter((en) => !gone.has(en.songId)),
+      entries: playlist.entries.filter((en) => !en.songId || !gone.has(en.songId)),
       currentUid: currentSongId && gone.has(currentSongId) ? null : playlist.currentUid
     })
     setSelectedIds(new Set())
@@ -1037,13 +1085,13 @@ export function SongBrowserModal({ open, onClose }: { open: boolean; onClose: ()
                   <div className="text-neutral-500">
                     Tocando:{' '}
                     <span className="text-neutral-200">
-                      {currentIndex >= 0 ? (songTitle(playlist.entries[currentIndex].songId)?.title ?? 'Música removida') : '—'}
+                      {currentIndex >= 0 ? entryTitle(playlist.entries[currentIndex]) : '—'}
                     </span>
                   </div>
                   <div className="mt-0.5 text-neutral-500">
                     Próxima:{' '}
                     <span className="text-accent">
-                      {nextEntry ? (songTitle(nextEntry.songId)?.title ?? 'Música removida') : 'fim da playlist'}
+                      {nextEntry ? entryTitle(nextEntry) : 'fim da playlist'}
                     </span>
                   </div>
                 </div>
@@ -1057,7 +1105,6 @@ export function SongBrowserModal({ open, onClose }: { open: boolean; onClose: ()
                   </div>
                 ) : (
                   playlist.entries.map((entry, i) => {
-                    const song = songTitle(entry.songId)
                     const isCurrent = entry.uid === playlist.currentUid
                     const isNext = nextEntry?.uid === entry.uid
                     return (
@@ -1092,11 +1139,18 @@ export function SongBrowserModal({ open, onClose }: { open: boolean; onClose: ()
                         </span>
                         <span className="w-5 shrink-0 text-center text-xs text-neutral-500">{i + 1}</span>
                         <button onClick={() => playEntry(entry.uid)} className="min-w-0 flex-1 text-left">
-                          <div className="truncate text-sm text-neutral-100">{song?.title ?? 'Música removida'}</div>
+                          <div className="flex items-center gap-1.5">
+                            {entry.verse && (
+                              <span title="Versículo-chave" className="shrink-0 text-accent">
+                                <Icon name="book" size={12} />
+                              </span>
+                            )}
+                            <span className="truncate text-sm text-neutral-100">{entryTitle(entry)}</span>
+                          </div>
                           <div className="flex items-center gap-1.5 truncate text-[11px] text-neutral-500">
-                            {isCurrent && <span className="font-medium text-accent">tocando</span>}
+                            {isCurrent && <span className="font-medium text-accent">{entry.verse ? 'no telão' : 'tocando'}</span>}
                             {isNext && !isCurrent && <span className="font-medium text-amber-300">próxima</span>}
-                            <span className="truncate">{song?.artist}</span>
+                            <span className="truncate">{entrySubtitle(entry)}</span>
                           </div>
                         </button>
                         <div className="flex shrink-0 items-center">
@@ -1221,7 +1275,7 @@ export function SongBrowserModal({ open, onClose }: { open: boolean; onClose: ()
                     title="Ir para a próxima música da playlist"
                     className="flex items-center gap-1.5 rounded-md border border-surface-700 px-2 py-1 text-neutral-300 hover:border-accent hover:text-neutral-100"
                   >
-                    Próxima: {songTitle(nextEntry.songId)?.title ?? 'música removida'}
+                    Próxima: {entryTitle(nextEntry)}
                     <Icon name="arrow-right" size={12} />
                   </button>
                 )}
@@ -1403,13 +1457,12 @@ export function SongBrowserModal({ open, onClose }: { open: boolean; onClose: ()
                 </div>
                 <div className="flex-1 space-y-1 overflow-y-auto p-2">
                   {playlist.entries.map((entry, i) => {
-                    const info = songTitle(entry.songId)
-                    const playing = entry.uid === playlist.currentUid || info?.id === selectedSong.id
+                    const playing = entry.uid === playlist.currentUid || (!!entry.songId && entry.songId === selectedSong.id)
                     return (
                       <button
                         key={entry.uid}
                         onClick={() => playEntry(entry.uid)}
-                        title={info ? `${info.title} — ${info.artist}` : 'música removida'}
+                        title={`${entryTitle(entry)}${entrySubtitle(entry) ? ` — ${entrySubtitle(entry)}` : ''}`}
                         className={`flex w-full items-start gap-1.5 rounded-md px-2 py-1.5 text-left text-xs transition-colors ${
                           playing
                             ? 'bg-accent/20 text-neutral-100 ring-1 ring-accent/60'
@@ -1418,7 +1471,7 @@ export function SongBrowserModal({ open, onClose }: { open: boolean; onClose: ()
                       >
                         <span className={playing ? 'text-accent' : 'text-neutral-600'}>{i + 1}</span>
                         <span className="min-w-0 flex-1 leading-snug">
-                          {info?.title ?? 'música removida'}
+                          {entryTitle(entry)}
                         </span>
                       </button>
                     )

@@ -1,18 +1,20 @@
 import { useEffect, useRef, useState } from 'react'
 import type { BibleBook, BibleVersionMeta } from '@shared/types/bible'
 import { parseQuickLocate } from '../../lib/bibleSearch'
-import { MAX_CHARS_PER_LINE, splitVerseIntoSlides } from '@shared/lib/verseSlides'
+import { MAX_CHARS_PER_LINE, UPPER_WIDTH_FACTOR, splitVerseIntoSlides } from '@shared/lib/verseSlides'
 import { categoryColorForIndex } from './bookCategories'
 import { QuickLocatePopup } from './QuickLocatePopup'
 import { LiveToggleButton } from '../common/LiveToggleButton'
 import { Icon } from '../common/Icon'
 import { LiveTextOverlay } from '../preview/LiveTextOverlay'
+import { FontPicker } from '../common/FontPicker'
+import { nanoid } from 'nanoid'
 
 const FONT_KEY = 'lyriclive.bibleFontPct'
 const UPPER_KEY = 'lyriclive.bibleUpper'
 const REF_KEY = 'lyriclive.bibleShowRef'
+const FONT_FAMILY_KEY = 'lyriclive.bibleFont'
 /** Maiúsculas ocupam mais largura que minúsculas: cabem menos letras por linha. */
-const UPPER_WIDTH_FACTOR = 1.2
 const FONT_MIN = 50
 const FONT_MAX = 200
 
@@ -24,6 +26,14 @@ function readSavedFontPct(): number {
     /* sem armazenamento: usa o padrão */
   }
   return 100
+}
+
+function readSavedFont(): string {
+  try {
+    return localStorage.getItem(FONT_FAMILY_KEY) ?? ''
+  } catch {
+    return ''
+  }
 }
 
 function readSavedShowRef(): boolean {
@@ -67,6 +77,10 @@ export function BibleBrowserModal({ open, onClose }: { open: boolean; onClose: (
   const [fontPct, setFontPct] = useState(readSavedFontPct)
   /** Mostrar "Livro Cap:Vers" no telão junto com o versículo. */
   const [showRef, setShowRef] = useState(readSavedShowRef)
+  /** Fonte do versículo no telão (vazio = a fonte padrão do programa). */
+  const [fontFamily, setFontFamily] = useState(readSavedFont)
+  /** Referência recém-guardada no culto (só pra confirmar na tela por uns segundos). */
+  const [addedToPlaylist, setAddedToPlaylist] = useState<string | null>(null)
   /** Letras todas maiúsculas no telão (só no texto do versículo). */
   const [upper, setUpper] = useState(readSavedUpper)
 
@@ -114,7 +128,8 @@ export function BibleBrowserModal({ open, onClose }: { open: boolean; onClose: (
     slideIdx: number,
     pct = fontPct,
     up = upper,
-    ref = showRef
+    ref = showRef,
+    font = fontFamily
   ): void => {
     const text = book.chapters[ch - 1]?.[verseIndex]
     if (text === undefined) return
@@ -123,8 +138,37 @@ export function BibleBrowserModal({ open, onClose }: { open: boolean; onClose: (
     window.api?.live.pushOverlay({
       text: slide,
       reference: ref ? `${book.name} ${ch}:${verseIndex + 1}` : '',
-      fontScale: pct / 100
+      fontScale: pct / 100,
+      fontFamily: font || undefined
     })
+  }
+
+  /** Guarda o versículo atual como versículo-chave na lista do culto (junto das músicas). */
+  const addVerseToPlaylist = async (): Promise<void> => {
+    const book = books?.[bookIndex]
+    const text = book?.chapters[chapter - 1]?.[readingVerseIndex]
+    if (!book || text === undefined || !window.api) return
+    const reference = `${book.name} ${chapter}:${readingVerseIndex + 1}`
+    const playlist = await window.api.playlist.get()
+    await window.api.playlist.save({
+      ...playlist,
+      entries: [...playlist.entries, { uid: nanoid(), verse: { reference, text } }]
+    })
+    setAddedToPlaylist(reference)
+    window.setTimeout(() => setAddedToPlaylist(null), 2200)
+  }
+
+  /** Troca a fonte do versículo no telão e já atualiza o que está em exibição. */
+  const changeFont = (next: string): void => {
+    setFontFamily(next)
+    try {
+      localStorage.setItem(FONT_FAMILY_KEY, next)
+    } catch {
+      /* sem armazenamento: só não lembra na próxima vez */
+    }
+    if (reading && books) {
+      showVerseOnScreen(books[bookIndex], chapter, readingVerseIndex, slideIndex, fontPct, upper, showRef, next)
+    }
   }
 
   /** Liga/desliga a referência no telão (o versículo continua igual). */
@@ -384,6 +428,11 @@ export function BibleBrowserModal({ open, onClose }: { open: boolean; onClose: (
             <Icon name="book" size={16} className="text-neutral-400" />
             <span>{currentBook ? `${currentBook.name} ${chapter}` : 'Bíblia'}</span>
             {reading && <span className="rounded bg-accent/20 px-1.5 py-0.5 text-[10px] text-accent">AO VIVO</span>}
+            {addedToPlaylist && (
+              <span className="rounded bg-emerald-500/15 px-2 py-0.5 text-[11px] font-normal text-emerald-300">
+                {addedToPlaylist} guardado no culto
+              </span>
+            )}
           </div>
           <div className="flex items-center gap-2">
             <div className="flex items-center gap-1" title="Tamanho da letra no telão">
@@ -411,6 +460,16 @@ export function BibleBrowserModal({ open, onClose }: { open: boolean; onClose: (
                 A+
               </button>
             </div>
+            {reading && (
+              <button
+                onClick={addVerseToPlaylist}
+                title="Guardar este versículo na lista do culto, junto das músicas"
+                className="flex items-center gap-1 rounded-md border border-surface-700 px-2.5 py-1 text-sm text-neutral-200 hover:border-accent hover:text-neutral-100"
+              >
+                <Icon name="plus" size={12} />
+                Culto
+              </button>
+            )}
             <button
               onClick={() => changeShowRef(!showRef)}
               title={showRef ? 'Não mostrar a referência no telão' : 'Mostrar “Livro Cap:Vers” no telão'}
@@ -429,6 +488,9 @@ export function BibleBrowserModal({ open, onClose }: { open: boolean; onClose: (
             >
               AA
             </button>
+            <div className="w-44" title="Fonte do versículo no telão">
+              <FontPicker value={fontFamily} onChange={changeFont} emptyLabel="Fonte padrão" />
+            </div>
             <select
               value={versionId}
               onChange={(e) => setVersionId(e.target.value)}
@@ -499,7 +561,8 @@ export function BibleBrowserModal({ open, onClose }: { open: boolean; onClose: (
                   overlay={{
                     text: readingSlides[slideIndex] ?? '',
                     reference: showRef ? `${currentBook?.name ?? ''} ${chapter}:${readingVerseIndex + 1}` : '',
-                    fontScale: fontPct / 100
+                    fontScale: fontPct / 100,
+                    fontFamily: fontFamily || undefined
                   }}
                 />
               </div>

@@ -24,7 +24,11 @@ export default function LiveApp() {
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') window.close()
+      if (e.key === 'Escape') {
+        // mesmo fade de saída usado quando o editor fecha a janela
+        document.documentElement.classList.add('live-leaving')
+        setTimeout(() => window.close(), 280)
+      }
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
