@@ -12,25 +12,52 @@ function filePathFor(id: string): string {
   return join(songsDir(), `${id}.json`)
 }
 
+/** Resumo já montado de cada arquivo, guardado entre as listagens: com biblioteca grande,
+ * reler e interpretar tudo a cada atualização era o que travava a pesquisa. */
+const summaryCache = new Map<string, { mtimeMs: number; summary: SongSummary }>()
+
+/** Lê em grupos pra não abrir arquivos demais de uma vez (o sistema tem limite). */
+const READ_BATCH = 40
+
+async function summaryOf(file: string): Promise<SongSummary | null> {
+  const full = join(songsDir(), file)
+  try {
+    const { mtimeMs } = await fs.stat(full)
+    const cached = summaryCache.get(file)
+    if (cached && cached.mtimeMs === mtimeMs) return cached.summary
+
+    const raw = await fs.readFile(full, 'utf-8')
+    const song = JSON.parse(raw) as Song
+    const summary: SongSummary = {
+      id: song.id,
+      title: song.title,
+      artist: song.artist,
+      text: song.blocks.join('\n')
+    }
+    summaryCache.set(file, { mtimeMs, summary })
+    return summary
+  } catch {
+    // ignora arquivo corrompido/ilegível
+    return null
+  }
+}
+
 export async function listSongs(): Promise<SongSummary[]> {
   await fs.mkdir(songsDir(), { recursive: true })
-  const files = await fs.readdir(songsDir())
+  const files = (await fs.readdir(songsDir())).filter((f) => f.endsWith('.json'))
+
   const summaries: SongSummary[] = []
-  for (const file of files) {
-    if (!file.endsWith('.json')) continue
-    try {
-      const raw = await fs.readFile(join(songsDir(), file), 'utf-8')
-      const song = JSON.parse(raw) as Song
-      summaries.push({
-        id: song.id,
-        title: song.title,
-        artist: song.artist,
-        text: song.blocks.join('\n')
-      })
-    } catch {
-      // ignora arquivo corrompido/ilegível
-    }
+  for (let i = 0; i < files.length; i += READ_BATCH) {
+    const lote = await Promise.all(files.slice(i, i + READ_BATCH).map(summaryOf))
+    for (const s of lote) if (s) summaries.push(s)
   }
+
+  // tira do cache o que não existe mais na pasta
+  const existing = new Set(files)
+  for (const key of summaryCache.keys()) {
+    if (!existing.has(key)) summaryCache.delete(key)
+  }
+
   return summaries.sort((a, b) => a.title.localeCompare(b.title, 'pt-BR'))
 }
 
@@ -45,6 +72,7 @@ export async function readSong(id: string): Promise<Song> {
 }
 
 export async function deleteSong(id: string): Promise<void> {
+  summaryCache.delete(`${id}.json`)
   await fs.rm(filePathFor(id), { force: true })
 }
 

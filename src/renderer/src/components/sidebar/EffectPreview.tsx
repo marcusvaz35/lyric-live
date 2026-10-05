@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { computeEffectPhase, type EffectDef, type EffectOverlay } from '../../lib/effects'
 
 const PREVIEW_TEXT = 'Efeito'
@@ -16,11 +16,27 @@ function applyOverlay(el: HTMLElement, overlay: EffectOverlay): void {
 
 /** Mostra o efeito tocando em loop (entra, segura, sai, pausa) pra dar pra ver antes de aplicar. */
 export function EffectPreview({ effect }: { effect: EffectDef }) {
+  const boxRef = useRef<HTMLDivElement>(null)
   const blockRef = useRef<HTMLDivElement>(null)
   const charRefs = useRef<(HTMLSpanElement | null)[]>([])
   const chars = [...PREVIEW_TEXT]
+  /** Só anima o que está à vista: a lista tem dezenas de miniaturas e animar todas
+   * ao mesmo tempo, o tempo todo, deixava o programa pesado. */
+  const [visible, setVisible] = useState(false)
 
   useEffect(() => {
+    const box = boxRef.current
+    if (!box) return
+    const observer = new IntersectionObserver(
+      ([entry]) => setVisible(entry.isIntersecting),
+      { threshold: 0.1 }
+    )
+    observer.observe(box)
+    return () => observer.disconnect()
+  }, [])
+
+  useEffect(() => {
+    if (!visible) return
     const cycle = effect.duration * 2 + HOLD
     const total = cycle + PAUSE
     const start = performance.now()
@@ -47,10 +63,10 @@ export function EffectPreview({ effect }: { effect: EffectDef }) {
     raf = requestAnimationFrame(tick)
     return () => cancelAnimationFrame(raf)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [effect])
+  }, [effect, visible])
 
   return (
-    <div className="flex h-10 items-center justify-center overflow-hidden rounded-md bg-surface-950">
+    <div ref={boxRef} className="flex h-10 items-center justify-center overflow-hidden rounded-md bg-surface-950">
       {effect.mode === 'chars' ? (
         <div className="text-sm font-medium text-neutral-100">
           {chars.map((char, i) => (

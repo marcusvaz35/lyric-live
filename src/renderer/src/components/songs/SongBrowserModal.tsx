@@ -103,6 +103,8 @@ export function SongBrowserModal({ open, onClose }: { open: boolean; onClose: ()
   const [plDropAt, setPlDropAt] = useState<number | null>(null)
   /** Música da biblioteca sendo arrastada pra playlist, e se o cursor está sobre a área da playlist. */
   const [libDrag, setLibDrag] = useState<string | null>(null)
+  /** Música com a letra aberta na lista, pra conferir antes de escolher. */
+  const [previewId, setPreviewId] = useState<string | null>(null)
   const [plOver, setPlOver] = useState(false)
 
   const [selectedSong, setSelectedSong] = useState<Song | null>(null)
@@ -848,7 +850,10 @@ export function SongBrowserModal({ open, onClose }: { open: boolean; onClose: ()
                   />
                   <input
                     value={query}
-                    onChange={(e) => setQuery(e.target.value)}
+                    onChange={(e) => {
+                      setQuery(e.target.value)
+                      setPreviewId(null)
+                    }}
                     placeholder="Pesquisar por título, artista ou uma frase inteira da letra..."
                     className="field-input w-full py-2.5 pl-9 pr-20 text-base"
                   />
@@ -933,8 +938,8 @@ export function SongBrowserModal({ open, onClose }: { open: boolean; onClose: ()
                   </div>
                 ) : (
                   filteredSongs.map((s) => (
+                    <div key={s.id} className="mb-0.5">
                     <div
-                      key={s.id}
                       draggable={!selectMode}
                       onDragStart={(e) => {
                         e.dataTransfer.effectAllowed = 'copyMove'
@@ -963,7 +968,13 @@ export function SongBrowserModal({ open, onClose }: { open: boolean; onClose: ()
                         />
                       )}
                       <button
-                        onClick={() => (selectMode ? toggleSelected(s.id) : openReading(s.id))}
+                        onClick={() =>
+                          selectMode
+                            ? toggleSelected(s.id)
+                            : setPreviewId(previewId === s.id ? null : s.id)
+                        }
+                        onDoubleClick={() => !selectMode && openReading(s.id)}
+                        title="Clique para ver a letra inteira; dois cliques abrem a música"
                         className="min-w-0 flex-1 px-3 py-2.5 text-left"
                       >
                         <div className="truncate text-sm text-neutral-100">{s.title}</div>
@@ -1000,6 +1011,33 @@ export function SongBrowserModal({ open, onClose }: { open: boolean; onClose: ()
                       </button>
                       </>
                       )}
+                    </div>
+
+                    {previewId === s.id && !selectMode && (
+                      <div className="mb-1 ml-3 mr-2 rounded-md border border-surface-700 bg-surface-950/60 p-3">
+                        <div className="mb-2 flex items-center justify-between gap-2">
+                          <span className="field-label">Letra completa — confira antes de escolher</span>
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={() => openReading(s.id)}
+                              className="rounded-md bg-accent px-3 py-1 text-xs font-medium text-white hover:bg-accent-hover"
+                            >
+                              Abrir música
+                            </button>
+                            <button
+                              onClick={() => setPreviewId(null)}
+                              title="Fechar a prévia"
+                              className="icon-btn h-6 w-6"
+                            >
+                              <Icon name="x" size={12} />
+                            </button>
+                          </div>
+                        </div>
+                        <div className="max-h-64 overflow-y-auto whitespace-pre-line text-sm leading-relaxed text-neutral-300">
+                          {s.text?.trim() ? s.text : 'Esta música está sem letra salva.'}
+                        </div>
+                      </div>
+                    )}
                     </div>
                   ))
                 )}

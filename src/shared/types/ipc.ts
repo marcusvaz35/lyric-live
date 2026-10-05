@@ -49,6 +49,7 @@ export const IPC = {
   updateDownload: 'update:download',
   updateInstall: 'update:install',
   updateOpenPage: 'update:openPage',
+  updateRestart: 'update:restart',
   updateAvailable: 'update:available',
   updateProgress: 'update:progress'
 } as const
@@ -64,6 +65,10 @@ export interface UpdateInfo {
   assetUrl: string | null
   size: number
   pageUrl: string
+  /** true quando o programa consegue instalar sozinho e reabrir (hoje: Windows). */
+  canInstallInPlace: boolean
+  /** true quando a versão em uso não deve mais ser usada: só dá pra seguir atualizando. */
+  mandatory: boolean
 }
 
 export interface UpdateCheckResult {

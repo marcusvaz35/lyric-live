@@ -1,7 +1,7 @@
 {
   "name": "presenter-studio",
   "productName": "Lyric Live",
-  "version": "0.2.29",
+  "version": "0.2.30",
   "description": "Lyric Live — editor visual de letras e apresentações para igrejas",
   "main": "./out/main/index.js",
   "author": "Marcus Brito",
@@ -12,9 +12,9 @@
     "build": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json && electron-vite build",
     "start": "electron-vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
-    "dist:mac": "npm run build && electron-builder --mac",
-    "dist:win": "npm run build && electron-builder --win",
-    "dist": "npm run build && electron-builder --mac --win"
+    "dist:mac": "npm run build && electron-builder --mac --publish never",
+    "dist:win": "npm run build && electron-builder --win --publish never",
+    "dist": "npm run build && electron-builder --mac --win --publish never"
   },
   "dependencies": {
     "@fontsource/anton": "^5.3.0",
@@ -25,6 +25,7 @@
     "@fontsource/permanent-marker": "^5.3.0",
     "@fontsource/playfair-display": "^5.3.0",
     "@huggingface/transformers": "^4.3.0",
+    "electron-updater": "^6.8.9",
     "font-list": "^2.1.0",
     "nanoid": "^5.0.9",
     "react": "^19.3.0",
@@ -96,12 +97,21 @@
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
-      "shortcutName": "Lyric Live"
+      "shortcutName": "Lyric Live",
+      "differentialPackage": false
     },
     "asarUnpack": [
       "node_modules/@img/**/*",
       "node_modules/font-list/**/*",
       "node_modules/onnxruntime-node/**/*"
+    ],
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "marcusvaz35",
+        "repo": "lyric-live-downloads",
+        "releaseType": "release"
+      }
     ]
   },
   "optionalDependencies": {

@@ -83,6 +83,7 @@ const api = {
     check: (): Promise<UpdateCheckResult> => ipcRenderer.invoke(IPC.updateCheck),
     download: (): Promise<void> => ipcRenderer.invoke(IPC.updateDownload),
     install: (): Promise<void> => ipcRenderer.invoke(IPC.updateInstall),
+    restart: (): Promise<void> => ipcRenderer.invoke(IPC.updateRestart),
     openPage: (): Promise<void> => ipcRenderer.invoke(IPC.updateOpenPage),
     onAvailable: (callback: (info: UpdateInfo) => void): (() => void) => {
       const listener = (_event: Electron.IpcRendererEvent, info: UpdateInfo): void => callback(info)
