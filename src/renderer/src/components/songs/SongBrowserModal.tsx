@@ -25,6 +25,14 @@ interface DraftSong {
 
 const EMPTY_DRAFT: DraftSong = { title: '', artist: '', author: '', lyrics: '' }
 
+/** Largura do bloco de letra que segue o mouse. */
+const HOVER_W = 360
+/** Altura de uma linha da lista (com e sem o trecho da letra encontrado). */
+const ROW_H = 58
+const ROW_H_MATCH = 74
+/** Linhas desenhadas além das visíveis, pra rolagem não piscar. */
+const OVERSCAN = 6
+
 const ACCENTED = 'áàâãäéèêëíìîïóòôõöúùûüçñ'
 const PLAIN = 'aaaaaeeeeiiiiooooouuuucn'
 
@@ -103,8 +111,24 @@ export function SongBrowserModal({ open, onClose }: { open: boolean; onClose: ()
   const [plDropAt, setPlDropAt] = useState<number | null>(null)
   /** Música da biblioteca sendo arrastada pra playlist, e se o cursor está sobre a área da playlist. */
   const [libDrag, setLibDrag] = useState<string | null>(null)
-  /** A letra aparece num bloco que segue o mouse (pra ver qual é qual sem clicar). */
-  const [hover, setHover] = useState<{ song: SongSummary; x: number; y: number } | null>(null)
+  /** A letra aparece num bloco que segue o mouse (pra ver qual é qual sem clicar).
+   * Só a música fica no estado; a posição é escrita direto no elemento, senão a lista
+   * inteira seria redesenhada a cada pixel que o mouse anda. */
+  const [hoverSong, setHoverSong] = useState<SongSummary | null>(null)
+  const hoverRef = useRef<HTMLDivElement>(null)
+
+  const moveHover = (e: React.MouseEvent): void => {
+    const el = hoverRef.current
+    if (!el) return
+    const { clientX: x, clientY: y } = e
+    el.style.left = `${x + 18 + HOVER_W > window.innerWidth ? x - 18 - HOVER_W : x + 18}px`
+    el.style.top = `${Math.max(8, Math.min(y + 16, window.innerHeight - 300))}px`
+  }
+
+  /** Rolagem da lista: com muitas músicas, só as linhas à vista são desenhadas. */
+  const listRef = useRef<HTMLDivElement>(null)
+  const [scrollTop, setScrollTop] = useState(0)
+  const [viewportH, setViewportH] = useState(560)
   const [plOver, setPlOver] = useState(false)
 
   const [selectedSong, setSelectedSong] = useState<Song | null>(null)
@@ -341,7 +365,7 @@ export function SongBrowserModal({ open, onClose }: { open: boolean; onClose: ()
 
   const openReading = async (id: string): Promise<Song | null> => {
     if (!window.api) return null
-    setHover(null)
+    setHoverSong(null)
     loadingSongRef.current = id
     const song = await window.api.song.read(id)
     if (loadingSongRef.current !== id) return null
@@ -682,7 +706,7 @@ export function SongBrowserModal({ open, onClose }: { open: boolean; onClose: ()
   }
 
   const toggleSelectMode = (): void => {
-    setHover(null)
+    setHoverSong(null)
     setSelectMode((v) => !v)
     setSelectedIds(new Set())
   }
@@ -745,6 +769,22 @@ export function SongBrowserModal({ open, onClose }: { open: boolean; onClose: ()
   useEffect(() => {
     if (mode === 'reading') blockRefs.current[blockIndex]?.scrollIntoView({ block: 'nearest' })
   }, [mode, blockIndex])
+
+  // pesquisa nova: volta pro topo da lista
+  useEffect(() => {
+    setScrollTop(0)
+    if (listRef.current) listRef.current.scrollTop = 0
+  }, [deferredQuery])
+
+  useEffect(() => {
+    const el = listRef.current
+    if (!el) return
+    const medir = (): void => setViewportH(el.clientHeight)
+    medir()
+    const observer = new ResizeObserver(medir)
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [mode])
 
   useEffect(() => {
     setPhraseSel(null)
@@ -816,6 +856,24 @@ export function SongBrowserModal({ open, onClose }: { open: boolean; onClose: ()
   }, [open, mode, onlineSearchOpen, holyricsImportOpen, blockIndex, selectedSong, onClose, editingIndex, editText, editIsNew, composerOpen, manualFx, editingFullLyrics, fullLyricsText])
 
   songRef.current = selectedSong
+
+  /** Trecho da letra que casou com a pesquisa, um por música (antes era recalculado duas
+   * vezes em cada linha desenhada). */
+  const matches = useMemo(() => {
+    const map = new Map<string, string>()
+    if (!deferredQuery.trim()) return map
+    for (const s of filteredSongs) {
+      const trecho = lyricMatch(s)
+      if (trecho) map.set(s.id, trecho)
+    }
+    return map
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filteredSongs, deferredQuery])
+
+  const rowH = deferredQuery.trim() ? ROW_H_MATCH : ROW_H
+  const firstRow = Math.max(0, Math.floor(scrollTop / rowH) - OVERSCAN)
+  const lastRow = Math.min(filteredSongs.length, Math.ceil((scrollTop + viewportH) / rowH) + OVERSCAN)
+  const visibleSongs = filteredSongs.slice(firstRow, lastRow)
 
   if (!open) return null
 
@@ -926,7 +984,11 @@ export function SongBrowserModal({ open, onClose }: { open: boolean; onClose: ()
                 </div>
               )}
 
-              <div className="flex-1 overflow-y-scroll p-2">
+              <div
+                ref={listRef}
+                onScroll={(e) => setScrollTop(e.currentTarget.scrollTop)}
+                className="flex-1 overflow-y-scroll p-2"
+              >
                 {!songs ? (
                   <div className="flex h-full items-center justify-center text-sm text-neutral-600">
                     {window.api ? 'Carregando…' : 'API do Electron indisponível neste ambiente.'}
@@ -936,8 +998,10 @@ export function SongBrowserModal({ open, onClose }: { open: boolean; onClose: ()
                     Nenhuma música salva ainda.
                   </div>
                 ) : (
-                  filteredSongs.map((s) => (
-                    <div key={s.id} className="mb-0.5">
+                  <div style={{ height: filteredSongs.length * rowH, position: 'relative' }}>
+                  <div style={{ position: 'absolute', top: firstRow * rowH, left: 0, right: 0 }}>
+                  {visibleSongs.map((s) => (
+                    <div key={s.id} className="pb-0.5" style={{ height: rowH }}>
                     <div
                       draggable={!selectMode}
                       onDragStart={(e) => {
@@ -950,10 +1014,14 @@ export function SongBrowserModal({ open, onClose }: { open: boolean; onClose: ()
                         setPlDropAt(null)
                         setPlOver(false)
                       }}
-                      onMouseMove={(e) => setHover({ song: s, x: e.clientX, y: e.clientY })}
-                      onMouseLeave={() => setHover(null)}
+                      onMouseEnter={(e) => {
+                        setHoverSong(s)
+                        moveHover(e)
+                      }}
+                      onMouseMove={moveHover}
+                      onMouseLeave={() => setHoverSong(null)}
                       title={selectMode ? undefined : 'Arraste para a playlist do culto'}
-                      className={`group flex w-full items-center gap-1 rounded-md pr-2 hover:bg-surface-800 ${
+                      className={`group flex h-full w-full items-center gap-1 rounded-md pr-2 hover:bg-surface-800 ${
                         selectMode ? 'cursor-pointer' : 'cursor-grab'
                       } ${selectMode && selectedIds.has(s.id) ? 'bg-surface-800' : ''} ${
                         libDrag === s.id ? 'opacity-50' : ''
@@ -975,9 +1043,9 @@ export function SongBrowserModal({ open, onClose }: { open: boolean; onClose: ()
                       >
                         <div className="truncate text-sm text-neutral-100">{s.title}</div>
                         <div className="truncate text-xs text-neutral-500">{s.artist}</div>
-                        {lyricMatch(s) && (
+                        {matches.get(s.id) && (
                           <div className="truncate text-xs italic text-accent/80" title="Trecho encontrado na letra">
-                            “{lyricMatch(s)}”
+                            “{matches.get(s.id)}”
                           </div>
                         )}
                       </button>
@@ -1010,7 +1078,9 @@ export function SongBrowserModal({ open, onClose }: { open: boolean; onClose: ()
                     </div>
 
                     </div>
-                  ))
+                  ))}
+                  </div>
+                  </div>
                 )}
               </div>
             </div>
@@ -1953,22 +2023,19 @@ export function SongBrowserModal({ open, onClose }: { open: boolean; onClose: ()
           />
         )}
 
-        {hover && (
-          <div
-            className="pointer-events-none fixed z-[60] w-[360px] rounded-lg border border-surface-600 bg-surface-900 p-3 shadow-2xl"
-            style={{
-              // sai de baixo do cursor e vira pro outro lado quando chega na borda da tela
-              left: hover.x + 18 + 360 > window.innerWidth ? hover.x - 18 - 360 : hover.x + 18,
-              top: Math.max(8, Math.min(hover.y + 16, window.innerHeight - 300))
-            }}
-          >
-            <div className="truncate text-sm font-medium text-neutral-100">{hover.song.title}</div>
-            <div className="mb-2 truncate text-xs text-neutral-500">{hover.song.artist}</div>
-            <div className="max-h-56 overflow-hidden whitespace-pre-line text-xs leading-relaxed text-neutral-300">
-              {hover.song.text?.trim() ? hover.song.text : 'Esta música está sem letra salva.'}
-            </div>
+        <div
+          ref={hoverRef}
+          className={`pointer-events-none fixed z-[60] rounded-lg border border-surface-600 bg-surface-900 p-3 shadow-2xl ${
+            hoverSong ? '' : 'hidden'
+          }`}
+          style={{ width: HOVER_W }}
+        >
+          <div className="truncate text-sm font-medium text-neutral-100">{hoverSong?.title}</div>
+          <div className="mb-2 truncate text-xs text-neutral-500">{hoverSong?.artist}</div>
+          <div className="max-h-56 overflow-hidden whitespace-pre-line text-xs leading-relaxed text-neutral-300">
+            {hoverSong?.text?.trim() ? hoverSong.text : 'Esta música está sem letra salva.'}
           </div>
-        )}
+        </div>
 
         {onlineSearchOpen && (
           <SongSearchOnlineModal
