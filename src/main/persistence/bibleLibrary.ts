@@ -8,8 +8,10 @@ import type { BibleBook, BibleVersionMeta } from '@shared/types/bible'
  * ACF/AA/NVI, e damarals/biblias (github.com/damarals/biblias, MIT) pra ARC e NAA —
  * mesmo formato de JSON nos dois. Os textos em si pertencem às respectivas
  * sociedades bíblicas — ACF e AA são de uso livre corrente para fins
- * ministeriais; ARC, NAA e NVI têm direitos reservados às suas editoras, então
- * ficam disponíveis mas com aviso explícito antes de baixar.
+ * ministeriais; Almeida 1911 e Tradução Brasileira já caíram em domínio público
+ * pela idade, e a Bíblia Livre foi liberada pelo próprio projeto; ARC, NAA e NVI
+ * têm direitos reservados às suas editoras, então ficam disponíveis mas com aviso
+ * explícito antes de baixar.
  */
 const CATALOG: Omit<BibleVersionMeta, 'downloaded'>[] = [
   {
@@ -23,6 +25,24 @@ const CATALOG: Omit<BibleVersionMeta, 'downloaded'>[] = [
     label: 'Almeida Revisada Imprensa Bíblica (AA)',
     license: 'Uso ministerial livre — Imprensa Bíblica Brasileira.',
     source: 'https://raw.githubusercontent.com/thiagobodruk/biblia/master/json/aa.json'
+  },
+  {
+    id: 'alm1911',
+    label: 'Almeida Revista e Corrigida 1911',
+    license: 'Domínio público — publicada em 1911, sem direitos em vigor.',
+    source: 'https://github.com/damarals/biblias/releases/latest/download/ALM1911.json'
+  },
+  {
+    id: 'tb',
+    label: 'Tradução Brasileira (1917)',
+    license: 'Domínio público — publicada em 1917, sem direitos em vigor.',
+    source: 'https://github.com/damarals/biblias/releases/latest/download/TB.json'
+  },
+  {
+    id: 'blivre',
+    label: 'Bíblia Livre',
+    license: 'Domínio público — liberada pelo Projeto Bíblia Livre para uso e distribuição.',
+    source: 'https://github.com/damarals/biblias/releases/latest/download/BLIVRE.json'
   },
   {
     id: 'arc',
