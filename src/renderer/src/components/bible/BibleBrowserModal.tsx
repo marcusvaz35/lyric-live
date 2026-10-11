@@ -1,7 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
 import type { BibleBook, BibleVersionMeta } from '@shared/types/bible'
 import { parseQuickLocate } from '../../lib/bibleSearch'
-import { MAX_CHARS_PER_LINE, UPPER_WIDTH_FACTOR, splitVerseIntoSlides } from '@shared/lib/verseSlides'
+import {
+  DEFAULT_LINES_PER_SLIDE,
+  MAX_CHARS_PER_LINE,
+  UPPER_WIDTH_FACTOR,
+  splitVerseIntoSlides
+} from '@shared/lib/verseSlides'
 import { categoryColorForIndex } from './bookCategories'
 import { QuickLocatePopup } from './QuickLocatePopup'
 import { LiveToggleButton } from '../common/LiveToggleButton'
@@ -15,6 +20,8 @@ const FONT_KEY = 'lyriclive.bibleFontPct'
 const UPPER_KEY = 'lyriclive.bibleUpper'
 const REF_KEY = 'lyriclive.bibleShowRef'
 const FONT_FAMILY_KEY = 'lyriclive.bibleFont'
+const LINES_KEY = 'lyriclive.bibleLinesPerSlide'
+const PUNCT_KEY = 'lyriclive.biblePunctuation'
 /** Maiúsculas ocupam mais largura que minúsculas: cabem menos letras por linha. */
 const FONT_MIN = 50
 const FONT_MAX = 200
@@ -27,6 +34,23 @@ function readSavedFontPct(): number {
     /* sem armazenamento: usa o padrão */
   }
   return 100
+}
+
+function readSavedLines(): number {
+  try {
+    const saved = Number(localStorage.getItem(LINES_KEY))
+    return saved >= 1 && saved <= 4 ? saved : DEFAULT_LINES_PER_SLIDE
+  } catch {
+    return DEFAULT_LINES_PER_SLIDE
+  }
+}
+
+function readSavedPunctuation(): boolean {
+  try {
+    return localStorage.getItem(PUNCT_KEY) === '1'
+  } catch {
+    return false
+  }
 }
 
 function readSavedFont(): string {
@@ -80,6 +104,10 @@ export function BibleBrowserModal({ open, onClose }: { open: boolean; onClose: (
   const [showRef, setShowRef] = useState(readSavedShowRef)
   /** Fonte do versículo no telão (vazio = a fonte padrão do programa). */
   const [fontFamily, setFontFamily] = useState(readSavedFont)
+  /** Quantas linhas cada trecho tem e se o corte respeita a pontuação. */
+  const [linesPerSlide, setLinesPerSlide] = useState(readSavedLines)
+  const [punctuation, setPunctuation] = useState(readSavedPunctuation)
+  const [showTrecho, setShowTrecho] = useState(false)
   /** Referência recém-guardada no culto (só pra confirmar na tela por uns segundos). */
   const [addedToPlaylist, setAddedToPlaylist] = useState<string | null>(null)
   /** Versículos guardados pro culto (lista só da Bíblia) e se o painel dela está aberto. */
@@ -89,9 +117,15 @@ export function BibleBrowserModal({ open, onClose }: { open: boolean; onClose: (
   const [upper, setUpper] = useState(readSavedUpper)
 
   /** Letra maior cabe menos texto por linha (e o contrário), então o versículo é refeito em slides de 2 linhas. */
-  const slidesFor = (text: string, pct = fontPct, up = upper): string[] => {
+  const slidesFor = (
+    text: string,
+    pct = fontPct,
+    up = upper,
+    linhas = linesPerSlide,
+    pont = punctuation
+  ): string[] => {
     const width = Math.max(12, Math.round(MAX_CHARS_PER_LINE / (pct / 100) / (up ? UPPER_WIDTH_FACTOR : 1)))
-    const slides = splitVerseIntoSlides(text, width)
+    const slides = splitVerseIntoSlides(text, width, linhas, pont)
     return up ? slides.map((slide) => slide.toLocaleUpperCase('pt-BR')) : slides
   }
 
@@ -134,11 +168,13 @@ export function BibleBrowserModal({ open, onClose }: { open: boolean; onClose: (
     pct = fontPct,
     up = upper,
     ref = showRef,
-    font = fontFamily
+    font = fontFamily,
+    linhas = linesPerSlide,
+    pont = punctuation
   ): void => {
     const text = book.chapters[ch - 1]?.[verseIndex]
     if (text === undefined) return
-    const slides = slidesFor(text, pct, up)
+    const slides = slidesFor(text, pct, up, linhas, pont)
     const slide = slides[Math.min(slideIdx, slides.length - 1)] ?? text
     window.api?.live.pushOverlay({
       text: slide,
@@ -196,6 +232,45 @@ export function BibleBrowserModal({ open, onClose }: { open: boolean; onClose: (
       fontScale: fontPct / 100,
       fontFamily: fontFamily || undefined
     })
+  }
+
+  /** Muda quantas linhas cabem no trecho; o versículo é refeito e o telão acompanha. */
+  const changeLines = (next: number): void => {
+    setLinesPerSlide(next)
+    try {
+      localStorage.setItem(LINES_KEY, String(next))
+    } catch {
+      /* sem armazenamento: só não lembra na próxima vez */
+    }
+    setSlideIndex(0)
+    if (reading && books) {
+      showVerseOnScreen(books[bookIndex], chapter, readingVerseIndex, 0, fontPct, upper, showRef, fontFamily, next)
+    }
+  }
+
+  /** Liga/desliga o corte na pontuação (vírgula, ponto) em vez de no fim da linha. */
+  const changePunctuation = (next: boolean): void => {
+    setPunctuation(next)
+    try {
+      localStorage.setItem(PUNCT_KEY, next ? '1' : '0')
+    } catch {
+      /* sem armazenamento: só não lembra na próxima vez */
+    }
+    setSlideIndex(0)
+    if (reading && books) {
+      showVerseOnScreen(
+        books[bookIndex],
+        chapter,
+        readingVerseIndex,
+        0,
+        fontPct,
+        upper,
+        showRef,
+        fontFamily,
+        linesPerSlide,
+        next
+      )
+    }
   }
 
   /** Troca a fonte do versículo no telão e já atualiza o que está em exibição. */
@@ -397,7 +472,8 @@ export function BibleBrowserModal({ open, onClose }: { open: boolean; onClose: (
 
       if (e.key === 'Escape') {
         e.preventDefault()
-        if (reading) exitReadingMode()
+        if (showTrecho) setShowTrecho(false)
+        else if (reading) exitReadingMode()
         else onClose()
         return
       }
@@ -410,7 +486,7 @@ export function BibleBrowserModal({ open, onClose }: { open: boolean; onClose: (
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, quickBuffer, books, onClose, reading, bookIndex, chapter, readingVerseIndex, slideIndex, fontPct, upper])
+  }, [open, quickBuffer, books, onClose, reading, bookIndex, chapter, readingVerseIndex, slideIndex, fontPct, upper, showTrecho])
 
   useEffect(() => {
     if (locatedVerse === null) return
@@ -510,6 +586,61 @@ export function BibleBrowserModal({ open, onClose }: { open: boolean; onClose: (
                 Culto
               </button>
             )}
+            <div className="relative">
+              <button
+                onClick={() => setShowTrecho(!showTrecho)}
+                title="Quantas linhas cada trecho tem e onde ele corta"
+                className={`flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-sm hover:bg-surface-800 ${
+                  showTrecho ? 'border-accent bg-accent/15 text-neutral-100' : 'border-surface-700 text-neutral-200'
+                }`}
+              >
+                <Icon name="list" size={14} />
+                Trecho
+              </button>
+              {showTrecho && (
+                <>
+                  <div className="fixed inset-0 z-20" onClick={() => setShowTrecho(false)} />
+                  <div className="absolute right-0 top-full z-30 mt-1 w-60 rounded-lg border border-accent/60 bg-surface-900 p-3 shadow-2xl">
+                    <div className="field-label mb-2">Tamanho do trecho</div>
+                    <div className="mb-1 text-xs text-neutral-300">Linhas por slide</div>
+                    <div className="mb-3 flex gap-1.5">
+                      {[1, 2, 3, 4].map((n) => (
+                        <button
+                          key={n}
+                          onClick={() => changeLines(n)}
+                          className={`h-8 w-9 rounded-md border text-sm transition-colors ${
+                            n === linesPerSlide
+                              ? 'border-accent bg-accent/25 text-neutral-100'
+                              : 'border-surface-700 text-neutral-400 hover:bg-surface-800'
+                          }`}
+                        >
+                          {n}
+                        </button>
+                      ))}
+                    </div>
+                    <label className="flex cursor-pointer items-start gap-2">
+                      <input
+                        type="checkbox"
+                        checked={punctuation}
+                        onChange={(e) => changePunctuation(e.target.checked)}
+                        className="mt-0.5 h-3.5 w-3.5 cursor-pointer accent-[var(--accent,#6366f1)]"
+                      />
+                      <span className="text-xs leading-snug text-neutral-300">
+                        Quebrar na pontuação
+                        <span className="block text-[11px] text-neutral-500">
+                          termina na vírgula ou no ponto
+                        </span>
+                      </span>
+                    </label>
+                    <div className="mt-3 border-t border-surface-800 pt-2 text-[11px] text-neutral-500">
+                      {reading
+                        ? `Este versículo vira ${readingSlides.length} ${readingSlides.length === 1 ? 'trecho' : 'trechos'}.`
+                        : 'Vale pra todos os versículos, inclusive os guardados no culto.'}
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
             <button
               onClick={() => setShowVerseList(!showVerseList)}
               title="Ver os versículos guardados pro culto"

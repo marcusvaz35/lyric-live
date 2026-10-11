@@ -21,27 +21,83 @@ function wrapLines(text: string, maxChars: number): string[] {
 /** Em maiúsculas cada letra ocupa mais, então cabe menos por linha. */
 export const UPPER_WIDTH_FACTOR = 1.2
 
+/** Quantas linhas cabem em cada trecho, quando a pessoa não escolheu outro valor. */
+export const DEFAULT_LINES_PER_SLIDE = 2
+
+/** Corta o texto nos fins de frase e de oração (vírgula, ponto e vírgula, ponto, etc.). */
+function splitAtPunctuation(text: string): string[] {
+  return text
+    .split(/(?<=[,;:.!?])\s+/)
+    .map((part) => part.trim())
+    .filter(Boolean)
+}
+
+/** Agrupa linhas de `n` em `n`. */
+function groupLines(lines: string[], n: number): string[][] {
+  const slides: string[][] = []
+  for (let i = 0; i < lines.length; i += n) slides.push(lines.slice(i, i + n))
+  return slides
+}
+
+/** Monta os trechos respeitando a pontuação: junta orações enquanto couberem no mesmo
+ * trecho, e nunca começa um trecho no meio de uma oração. */
+function slidesByPunctuation(text: string, maxCharsPerLine: number, linesPerSlide: number): string[][] {
+  const slides: string[][] = []
+  let buffer: string[] = []
+
+  for (const part of splitAtPunctuation(text)) {
+    const lines = wrapLines(part, maxCharsPerLine)
+    if (buffer.length > 0 && buffer.length + lines.length > linesPerSlide) {
+      slides.push(buffer)
+      buffer = []
+    }
+    if (lines.length >= linesPerSlide) {
+      // oração maior que um trecho: sai em pedaços cheios e a sobra abre o próximo
+      const cheios = groupLines(lines, linesPerSlide)
+      const resto = cheios[cheios.length - 1]
+      if (resto.length < linesPerSlide) cheios.pop()
+      slides.push(...cheios)
+      buffer = resto.length < linesPerSlide ? resto : []
+    } else {
+      buffer = [...buffer, ...lines]
+    }
+  }
+
+  if (buffer.length > 0) slides.push(buffer)
+  return slides
+}
+
 /** Versículos não têm quebra de linha própria (ao contrário de letras de música), então
- * quebramos pelo tamanho da linha e agrupamos de 2 em 2 — mesma ideia de `splitIntoBlocks`,
- * pra caber na tela igual um slide de música em vez de estourar em várias linhas. */
-export function splitVerseIntoSlides(text: string, maxCharsPerLine = MAX_CHARS_PER_LINE): string[] {
+ * quebramos pelo tamanho da linha e agrupamos em trechos do tamanho escolhido. Com
+ * `breakOnPunctuation`, o trecho termina na vírgula ou no ponto em vez de no fim da linha. */
+export function splitVerseIntoSlides(
+  text: string,
+  maxCharsPerLine = MAX_CHARS_PER_LINE,
+  linesPerSlide = DEFAULT_LINES_PER_SLIDE,
+  breakOnPunctuation = false
+): string[] {
+  const porTrecho = Math.max(1, Math.round(linesPerSlide))
+
+  if (breakOnPunctuation) {
+    const slides = slidesByPunctuation(text, maxCharsPerLine, porTrecho)
+    return slides.length > 0 ? slides.map((l) => l.join('\n')) : ['']
+  }
+
   let lines = wrapLines(text, maxCharsPerLine)
   if (lines.length === 0) return ['']
-  // Número ímpar de linhas deixa o último trecho com uma linha só (às vezes uma palavra solta).
-  // Estreitar um pouco as linhas costuma fechar em número par e equilibra os trechos.
-  if (lines.length > 2 && lines.length % 2 === 1) {
+
+  // sobrar uma linha solta no último trecho fica feio (às vezes uma palavra só);
+  // estreitar um pouco as linhas costuma fechar a conta e equilibrar os trechos
+  if (lines.length > porTrecho && lines.length % porTrecho === 1) {
     const narrowest = Math.max(12, Math.floor(maxCharsPerLine * 0.75))
     for (let width = maxCharsPerLine - 1; width >= narrowest; width--) {
       const candidate = wrapLines(text, width)
-      if (candidate.length % 2 === 0) {
+      if (candidate.length % porTrecho !== 1) {
         lines = candidate
         break
       }
     }
   }
-  const slides: string[] = []
-  for (let i = 0; i < lines.length; i += 2) {
-    slides.push(lines.slice(i, i + 2).join('\n'))
-  }
-  return slides
+
+  return groupLines(lines, porTrecho).map((l) => l.join('\n'))
 }
