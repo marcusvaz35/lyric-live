@@ -105,6 +105,8 @@ export function SongBrowserModal({ open, onClose }: { open: boolean; onClose: ()
   const [libDrag, setLibDrag] = useState<string | null>(null)
   /** Música com a letra aberta na lista, pra conferir antes de escolher. */
   const [previewId, setPreviewId] = useState<string | null>(null)
+  /** No modo de seleção, a letra aparece num bloco que segue o mouse (pra ver qual é qual). */
+  const [hover, setHover] = useState<{ song: SongSummary; x: number; y: number } | null>(null)
   const [plOver, setPlOver] = useState(false)
 
   const [selectedSong, setSelectedSong] = useState<Song | null>(null)
@@ -681,6 +683,7 @@ export function SongBrowserModal({ open, onClose }: { open: boolean; onClose: ()
   }
 
   const toggleSelectMode = (): void => {
+    setHover(null)
     setSelectMode((v) => !v)
     setSelectedIds(new Set())
   }
@@ -913,7 +916,7 @@ export function SongBrowserModal({ open, onClose }: { open: boolean; onClose: ()
                   </button>
                   <span className="text-neutral-500">
                     {selectedIds.size === 0
-                      ? 'Marque as músicas que quer excluir'
+                      ? 'Marque as músicas que quer excluir — passe o mouse pra ver a letra'
                       : `${selectedIds.size} ${selectedIds.size === 1 ? 'selecionada' : 'selecionadas'}`}
                   </span>
                   <button
@@ -951,6 +954,8 @@ export function SongBrowserModal({ open, onClose }: { open: boolean; onClose: ()
                         setPlDropAt(null)
                         setPlOver(false)
                       }}
+                      onMouseMove={(e) => selectMode && setHover({ song: s, x: e.clientX, y: e.clientY })}
+                      onMouseLeave={() => selectMode && setHover(null)}
                       title={selectMode ? undefined : 'Arraste para a playlist do culto'}
                       className={`group flex w-full items-center gap-1 rounded-md pr-2 hover:bg-surface-800 ${
                         selectMode ? 'cursor-pointer' : 'cursor-grab'
@@ -1980,6 +1985,23 @@ export function SongBrowserModal({ open, onClose }: { open: boolean; onClose: ()
             onCancel={() => setHolyricsImportOpen(false)}
             onImported={refreshSongs}
           />
+        )}
+
+        {selectMode && hover && (
+          <div
+            className="pointer-events-none fixed z-[60] w-[360px] rounded-lg border border-surface-600 bg-surface-900 p-3 shadow-2xl"
+            style={{
+              // sai de baixo do cursor e vira pro outro lado quando chega na borda da tela
+              left: hover.x + 18 + 360 > window.innerWidth ? hover.x - 18 - 360 : hover.x + 18,
+              top: Math.max(8, Math.min(hover.y + 16, window.innerHeight - 300))
+            }}
+          >
+            <div className="truncate text-sm font-medium text-neutral-100">{hover.song.title}</div>
+            <div className="mb-2 truncate text-xs text-neutral-500">{hover.song.artist}</div>
+            <div className="max-h-56 overflow-hidden whitespace-pre-line text-xs leading-relaxed text-neutral-300">
+              {hover.song.text?.trim() ? hover.song.text : 'Esta música está sem letra salva.'}
+            </div>
+          </div>
         )}
 
         {onlineSearchOpen && (
