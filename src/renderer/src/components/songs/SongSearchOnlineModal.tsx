@@ -22,7 +22,16 @@ export function SongSearchOnlineModal({
   const [selected, setSelected] = useState<SongSearchResult | null>(null)
   const [lyrics, setLyrics] = useState<string | null>(null)
   const [lyricsLoading, setLyricsLoading] = useState(false)
+  /** Resultado sob o mouse: a letra dele aparece no painel sem precisar clicar. */
+  const [hovered, setHovered] = useState<SongSearchResult | null>(null)
+  /** Letras já buscadas, por "artista|título", pra não repetir a busca a cada passada do mouse. */
+  const lyricsCache = useRef(new Map<string, string | null>())
+  const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  /** Última letra pedida: respostas de buscas antigas são descartadas. */
+  const lastRequested = useRef<string>('')
   const inputRef = useRef<HTMLInputElement>(null)
+
+  const keyOf = (r: SongSearchResult): string => `${r.artist}|${r.title}`
 
   useEffect(() => {
     inputRef.current?.focus()
@@ -56,23 +65,49 @@ export function SongSearchOnlineModal({
     }
   }, [query])
 
-  const handleSelect = async (result: SongSearchResult): Promise<void> => {
-    setSelected(result)
-    setLyrics(null)
+  /** Busca a letra (ou pega a já buscada) e mostra no painel da direita. */
+  const showLyrics = async (result: SongSearchResult): Promise<void> => {
+    const key = keyOf(result)
+    if (lyricsCache.current.has(key)) {
+      lastRequested.current = key
+      setLyrics(lyricsCache.current.get(key) ?? null)
+      setLyricsLoading(false)
+      return
+    }
     if (!window.api) return
+    lastRequested.current = key
+    setLyrics(null)
     setLyricsLoading(true)
     try {
       const text = await window.api.song.fetchLyrics(result.artist, result.title)
-      setLyrics(text)
+      lyricsCache.current.set(key, text)
+      // o mouse pode ter passado pra outro resultado enquanto a busca ia e voltava
+      if (lastRequested.current === key) setLyrics(text)
     } finally {
-      setLyricsLoading(false)
+      if (lastRequested.current === key) setLyricsLoading(false)
     }
+  }
+
+  /** Passar o mouse já mostra a letra; espera um instante pra não buscar tudo de uma vez. */
+  const handleHover = (result: SongSearchResult | null): void => {
+    if (hoverTimer.current) clearTimeout(hoverTimer.current)
+    setHovered(result)
+    if (!result) return
+    hoverTimer.current = setTimeout(() => showLyrics(result), 220)
+  }
+
+  const handleSelect = (result: SongSearchResult): void => {
+    setSelected(result)
+    showLyrics(result)
   }
 
   const handleUse = (): void => {
     if (!selected) return
     onUseResult({ title: selected.title, artist: selected.artist, lyrics: lyrics ?? '' })
   }
+
+  // o painel segue o mouse; parado, fica no resultado escolhido
+  const mostrando = hovered ?? selected
 
   return (
     <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/70 p-6">
@@ -99,6 +134,9 @@ export function SongSearchOnlineModal({
               <button
                 key={`${r.title}-${r.artist}-${i}`}
                 onClick={() => handleSelect(r)}
+                onMouseEnter={() => handleHover(r)}
+                onMouseLeave={() => handleHover(null)}
+                title="Passe o mouse para ver a letra; clique para usar esta música"
                 className={`border-b border-surface-800/60 px-4 py-2.5 text-left transition-colors ${
                   selected === r ? 'bg-accent/15' : 'hover:bg-surface-800'
                 }`}
@@ -110,15 +148,20 @@ export function SongSearchOnlineModal({
           </div>
 
           <div className="flex w-1/2 flex-col overflow-hidden p-4">
-            {!selected ? (
+            {!mostrando ? (
               <div className="flex flex-1 items-center justify-center text-center text-sm text-neutral-600">
-                Escolha um resultado pra ver a letra
+                Passe o mouse num resultado pra ver a letra
               </div>
             ) : (
               <>
                 <div className="mb-2">
-                  <div className="text-sm font-semibold text-neutral-100">{selected.title}</div>
-                  <div className="text-xs text-neutral-500">{selected.artist}</div>
+                  <div className="text-sm font-semibold text-neutral-100">{mostrando.title}</div>
+                  <div className="text-xs text-neutral-500">
+                    {mostrando.artist}
+                    {hovered && selected && hovered !== selected && (
+                      <span className="ml-2 text-neutral-600">(só espiando)</span>
+                    )}
+                  </div>
                 </div>
                 <div className="flex-1 overflow-y-scroll whitespace-pre-line text-sm leading-relaxed text-neutral-300">
                   {lyricsLoading
