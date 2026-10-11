@@ -5,11 +5,11 @@ import type { BibleBook, BibleVersionMeta } from '@shared/types/bible'
 
 /**
  * Fontes: thiagobodruk/biblia (github.com/thiagobodruk/biblia, CC BY-NC) pra
- * ACF/AA/NVI, e damarals/biblias (github.com/damarals/biblias, MIT) pra ARC e NAA —
+ * ACF/AA/NVI, e damarals/biblias (github.com/damarals/biblias, MIT) pras demais —
  * mesmo formato de JSON nos dois. Os textos em si pertencem às respectivas
  * sociedades bíblicas — ACF e AA são de uso livre corrente para fins
  * ministeriais; Almeida 1911 e Tradução Brasileira já caíram em domínio público
- * pela idade, e a Bíblia Livre foi liberada pelo próprio projeto; ARC, NAA e NVI
+ * pela idade, e a Bíblia Livre foi liberada pelo próprio projeto; ARC, NAA, KJA, KJF e NVI
  * têm direitos reservados às suas editoras, então ficam disponíveis mas com aviso
  * explícito antes de baixar.
  */
@@ -55,6 +55,18 @@ const CATALOG: Omit<BibleVersionMeta, 'downloaded'>[] = [
     label: 'Nova Almeida Atualizada (NAA)',
     license: 'Direitos reservados à Sociedade Bíblica do Brasil — confirme a licença antes de usar comercialmente.',
     source: 'https://github.com/damarals/biblias/releases/latest/download/NAA.json'
+  },
+  {
+    id: 'kja',
+    label: 'King James Atualizada (KJA)',
+    license: 'Direitos reservados à Abba Press — confirme a licença antes de usar comercialmente.',
+    source: 'https://github.com/damarals/biblias/releases/latest/download/KJA.json'
+  },
+  {
+    id: 'kjf',
+    label: 'King James Fiel 1611 (KJF)',
+    license: 'Direitos reservados à BV Films Editora — confirme a licença antes de usar comercialmente.',
+    source: 'https://github.com/damarals/biblias/releases/latest/download/KJF.json'
   },
   {
     id: 'nvi',
