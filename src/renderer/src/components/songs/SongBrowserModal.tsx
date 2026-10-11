@@ -1313,7 +1313,6 @@ export function SongBrowserModal({ open, onClose }: { open: boolean; onClose: ()
                     setBlockIndex(i)
                     pushBlock(selectedSong, i)
                   }}
-                  onDoubleClick={() => editingIndex === null && startEdit(i)}
                   draggable={editingIndex === null}
                   onDragStart={(e) => {
                     setDragIndex(i)
@@ -1887,7 +1886,7 @@ export function SongBrowserModal({ open, onClose }: { open: boolean; onClose: ()
             </div>
             <div className="flex items-center justify-center gap-8 border-t border-surface-800 px-3 py-1.5 text-[11px] text-neutral-600">
               <span>← → trocam de slide{manualFx ? ' · D dispara o efeito' : ''}</span>
-              <span>Enter ou duplo clique edita · ⌘/Ctrl+Enter salva · +Shift salva e cria outro slide</span>
+              <span>Lápis ou Enter edita · ⌘/Ctrl+Enter salva · +Shift salva e cria outro slide</span>
               <span>Esc apaga o telão</span>
             </div>
           </>
