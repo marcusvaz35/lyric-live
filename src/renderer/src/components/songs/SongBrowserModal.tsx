@@ -222,6 +222,9 @@ export function SongBrowserModal({ open, onClose }: { open: boolean; onClose: ()
       setSelectedSong(null)
       setOnlineSearchOpen(false)
       setHolyricsImportOpen(false)
+      setEditingFullLyrics(false)
+      setEditingIndex(null)
+      setComposerOpen(false)
       window.api?.live.pushOverlay(null)
     }
   }, [open])
@@ -366,6 +369,8 @@ export function SongBrowserModal({ open, onClose }: { open: boolean; onClose: ()
   const openReading = async (id: string): Promise<Song | null> => {
     if (!window.api) return null
     setHoverSong(null)
+    setEditingFullLyrics(false)
+    setEditingIndex(null)
     loadingSongRef.current = id
     const song = await window.api.song.read(id)
     if (loadingSongRef.current !== id) return null
@@ -388,6 +393,10 @@ export function SongBrowserModal({ open, onClose }: { open: boolean; onClose: ()
     setPreview(null)
     setMode('list')
     setSelectedSong(null)
+    // o painel de edição cobre a janela inteira: se ficar marcado como aberto, ele volta
+    // sozinho na próxima música e trava a tela
+    setEditingFullLyrics(false)
+    setEditingIndex(null)
   }
 
   /** Esc: apaga o telão e continua aqui, pronto pra próxima música. */
@@ -779,6 +788,9 @@ export function SongBrowserModal({ open, onClose }: { open: boolean; onClose: ()
   useEffect(() => {
     const el = listRef.current
     if (!el) return
+    // a lista é montada de novo ao voltar de uma música: sem isto, o estado guardaria a
+    // rolagem antiga e as linhas seriam desenhadas fora da área visível (lista em branco)
+    setScrollTop(el.scrollTop)
     const medir = (): void => setViewportH(el.clientHeight)
     medir()
     const observer = new ResizeObserver(medir)
@@ -871,8 +883,12 @@ export function SongBrowserModal({ open, onClose }: { open: boolean; onClose: ()
   }, [filteredSongs, deferredQuery])
 
   const rowH = deferredQuery.trim() ? ROW_H_MATCH : ROW_H
-  const firstRow = Math.max(0, Math.floor(scrollTop / rowH) - OVERSCAN)
-  const lastRow = Math.min(filteredSongs.length, Math.ceil((scrollTop + viewportH) / rowH) + OVERSCAN)
+  // rolagem presa ao conteúdo: um valor velho (lista menor depois de pesquisar ou excluir)
+  // não pode deixar a área visível vazia
+  const maxScroll = Math.max(0, filteredSongs.length * rowH - viewportH)
+  const scroll = Math.min(Math.max(0, scrollTop), maxScroll)
+  const firstRow = Math.max(0, Math.floor(scroll / rowH) - OVERSCAN)
+  const lastRow = Math.min(filteredSongs.length, Math.ceil((scroll + viewportH) / rowH) + OVERSCAN)
   const visibleSongs = filteredSongs.slice(firstRow, lastRow)
 
   if (!open) return null
